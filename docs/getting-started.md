@@ -9,14 +9,14 @@ How to stand up the lab host from scratch, verify it, and tear it down.
 | Terraform >= 1.5 | Builds the infrastructure |
 | AWS CLI v2, configured with credentials | Terraform and SSM use it |
 | [`session-manager-plugin`](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html) | `make ssm` and Ansible connect through it |
-| Ansible + `community.aws` / `amazon.aws` collections | Configures the host (next phase) |
+| Python 3 | `make deps` builds a `.venv` with Ansible and boto3 from `ansible/requirements.txt` |
 | `make` | Drives the stacks in order |
 | A Route 53 **public hosted zone** | The `dns` stack looks it up; it doesn't create it |
 
 Your AWS identity needs permission to manage EC2, VPC, IAM roles/profiles, S3, Route 53 records and SSM.
 
 ```sh
-ansible-galaxy collection install community.aws amazon.aws
+make deps    # .venv + Ansible collections (needed before make ping / configure)
 ```
 
 ## 1. Configure
@@ -67,7 +67,7 @@ nc -vz -w 3 <public_ip> 22                 # times out: no SSH rule
 nc -vz -w 3 <public_ip> 80                 # refused: allowed, but nothing listening yet
 dig +short <primary_fqdn>                  # returns the Elastic IP
 
-ansible -i ansible/inventory/hosts.yml shortener -m ping    # pong = full chain works
+make ping                                  # pong = full chain works
 ```
 
 The telemetry disk is attached but unformatted. Mounting it is the Ansible phase's job.

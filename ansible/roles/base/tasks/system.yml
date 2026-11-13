@@ -1,0 +1,49 @@
+---
+- name: Install base packages
+  ansible.builtin.dnf:
+    name:
+      - chrony
+      - dnf-automatic
+    state: present
+
+- name: Enable time sync
+  ansible.builtin.systemd:
+    name: chronyd
+    enabled: true
+    state: started
+
+- name: Apply security updates only
+  ansible.builtin.ini_file:
+    path: /etc/dnf/automatic.conf
+    section: commands
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    mode: "0644"
+  loop:
+    - { option: upgrade_type, value: security }
+    - { option: apply_updates, value: "yes" }
+
+- name: Enable automatic security updates
+  ansible.builtin.systemd:
+    name: dnf-automatic.timer
+    enabled: true
+    state: started
+
+- name: Create the journald drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Cap journald disk usage
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/sre-lab.conf
+    content: |
+      [Journal]
+      SystemMaxUse={{ journald_system_max_use }}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart journald

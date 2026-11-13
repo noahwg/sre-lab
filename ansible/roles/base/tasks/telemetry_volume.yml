@@ -1,0 +1,24 @@
+---
+- name: Install xfsprogs
+  ansible.builtin.dnf:
+    name: xfsprogs
+    state: present
+
+- name: Wait for the telemetry device to appear
+  ansible.builtin.wait_for:
+    path: "{{ telemetry_device }}"
+    timeout: 60
+
+# Only creates a filesystem when the device has none; never reformats existing data.
+- name: Create filesystem on the telemetry volume
+  community.general.filesystem:
+    fstype: "{{ telemetry_fs_type }}"
+    dev: "{{ telemetry_device }}"
+
+- name: Mount the telemetry volume
+  ansible.posix.mount:
+    path: "{{ telemetry_mount_point }}"
+    src: "{{ telemetry_device }}"
+    fstype: "{{ telemetry_fs_type }}"
+    opts: defaults,noatime,nofail
+    state: mounted

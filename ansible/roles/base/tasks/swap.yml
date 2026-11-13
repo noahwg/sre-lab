@@ -1,0 +1,46 @@
+---
+- name: Allocate the swap file
+  ansible.builtin.command:
+    cmd: "fallocate -l {{ swap_size_mb }}M {{ swap_file }}"
+    creates: "{{ swap_file }}"
+  register: swap_allocated
+
+- name: Restrict swap file permissions
+  ansible.builtin.file:
+    path: "{{ swap_file }}"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Format the swap file
+  ansible.builtin.command:
+    cmd: "mkswap {{ swap_file }}"
+  when: swap_allocated is changed
+
+- name: Persist the swap file in fstab
+  ansible.posix.mount:
+    path: none
+    src: "{{ swap_file }}"
+    fstype: swap
+    opts: sw
+    state: present
+
+- name: Check whether swap is active
+  ansible.builtin.command:
+    cmd: "swapon --show=NAME --noheadings"
+  register: swap_active
+  changed_when: false
+  check_mode: false   # read-only, so safe to run during --check
+
+- name: Enable swap
+  ansible.builtin.command:
+    cmd: "swapon {{ swap_file }}"
+  when: swap_file not in swap_active.stdout
+
+- name: Lower swappiness
+  ansible.posix.sysctl:
+    name: vm.swappiness
+    value: "{{ swappiness }}"
+    sysctl_file: /etc/sysctl.d/99-sre-lab.conf
+    state: present
+    reload: true

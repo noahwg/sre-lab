@@ -6,6 +6,7 @@ A URL shortener that runs entirely on a single, cheap AWS host: web server, Post
 
 - [Getting started](docs/getting-started.md): prerequisites, `make up`, verifying, and tearing down
 - [Terraform infrastructure](docs/terraform.md): modules, stacks, cost, and operational notes
+- [Ansible configuration](docs/ansible.md): roles, running the playbook, and what each role does
 
 ## Quick start
 
