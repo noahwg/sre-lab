@@ -14,7 +14,15 @@ DOWN_STACKS  := $(or $(STACK),$(REVERSE))
 tf = terraform -chdir=$(ENV)/$(1) $(2)
 
 .DEFAULT_GOAL := help
-.PHONY: help up destroy plan init fmt validate inventory ssm check-vars
+ANSIBLE_DIR  := ansible
+VENV         := .venv
+# Ansible targets use the repo-local virtualenv.
+export PATH  := $(abspath $(VENV))/bin:$(PATH)
+# macOS: Ansible forks workers, and the ObjC runtime aborts forked children by default.
+export OBJC_DISABLE_INITIALIZE_FORK_SAFETY := YES
+ANSIBLE_ARGS ?=
+
+.PHONY: help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -50,3 +58,23 @@ inventory: ## Print the generated Ansible inventory
 
 ssm: ## Open a shell on the host via SSM
 	@$$($(call tf,compute,output -raw ssm_session_command))
+
+$(VENV)/.installed: $(ANSIBLE_DIR)/requirements.txt
+	python3 -m venv $(VENV)
+	$(VENV)/bin/pip install --quiet --upgrade pip
+	$(VENV)/bin/pip install --quiet -r $(ANSIBLE_DIR)/requirements.txt
+	@touch $@
+
+venv: $(VENV)/.installed ## Create .venv with the pinned Python deps
+
+deps: venv ## Install Ansible collections
+	$(VENV)/bin/ansible-galaxy collection install -r $(ANSIBLE_DIR)/requirements.yml -p $(ANSIBLE_DIR)/collections
+
+configure: $(VENV)/.installed ## Run the Ansible playbook (ANSIBLE_ARGS="--tags base --check" etc.)
+	cd $(ANSIBLE_DIR) && ansible-playbook site.yml $(ANSIBLE_ARGS)
+
+check: $(VENV)/.installed ## Dry-run the playbook (--check --diff)
+	cd $(ANSIBLE_DIR) && ansible-playbook site.yml --check --diff $(ANSIBLE_ARGS)
+
+ping: $(VENV)/.installed ## Ansible ping over SSM
+	cd $(ANSIBLE_DIR) && ansible shortener -m ping $(ANSIBLE_ARGS)

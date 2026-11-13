@@ -1,0 +1,16 @@
+---
+- name: Import telemetry volume tasks
+  ansible.builtin.import_tasks: telemetry_volume.yml
+  tags: [telemetry_volume]
+
+- name: Import swap tasks
+  ansible.builtin.import_tasks: swap.yml
+  tags: [swap]
+
+- name: Import system tasks
+  ansible.builtin.import_tasks: system.yml
+  tags: [system]
+
+- name: Import docker tasks
+  ansible.builtin.import_tasks: docker.yml
+  tags: [docker]

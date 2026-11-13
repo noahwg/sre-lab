@@ -1,0 +1,20 @@
+---
+# Telemetry volume. telemetry_volume_id and telemetry_mount_point come from the
+# Terraform-generated inventory. On Nitro instances the EBS volume shows up as
+# /dev/nvmeXn1, but a stable by-id symlink exists (volume ID without the dash).
+telemetry_fs_type: xfs
+telemetry_device: "/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_{{ telemetry_volume_id | replace('-', '') }}"
+
+# Swap file on the root disk (the host has only 2 GB of RAM).
+swap_file: /swapfile
+swap_size_mb: 2048
+swappiness: 10
+
+# Docker
+docker_compose_version: v2.29.7
+docker_compose_arch: aarch64
+docker_log_max_size: 10m
+docker_log_max_file: "3"
+
+# journald
+journald_system_max_use: 200M

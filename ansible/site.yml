@@ -1,0 +1,7 @@
+---
+- name: Configure the lab host
+  hosts: shortener
+  become: true
+  roles:
+    - role: base
+      tags: [base]
