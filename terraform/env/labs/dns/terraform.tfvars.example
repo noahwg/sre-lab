@@ -1,0 +1,2 @@
+zone_name    = "example.com"    # existing Route 53 public hosted zone
+record_names = ["@", "grafana"] # first entry is the primary FQDN

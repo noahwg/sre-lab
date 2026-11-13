@@ -1,0 +1,3 @@
+# Optional. Shared by every stack; defaults are the same values.
+region = "us-east-1"
+name   = "sre-lab"
