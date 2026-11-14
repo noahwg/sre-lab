@@ -1,7 +1,8 @@
 ENV          := terraform/env/labs
 ORDER        := network compute dns inventory
-# Registry (ECR + GitHub OIDC) has its own lifecycle: `make up` / `make destroy` leave it alone.
-ALL_STACKS   := registry $(ORDER)
+# Registry (ECR + GitHub OIDC) and secrets (SSM parameters) have their own lifecycle:
+# `make up` / `make destroy` leave them alone.
+ALL_STACKS   := registry secrets $(ORDER)
 REVERSE      := inventory dns compute network
 STACK        ?=
 AUTO_APPROVE ?=
@@ -24,7 +25,7 @@ export PATH  := $(abspath $(VENV))/bin:$(PATH)
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY := YES
 ANSIBLE_ARGS ?=
 
-.PHONY: registry-up registry-destroy app-test app-image help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
+.PHONY: secrets-up secrets-destroy registry-up registry-destroy app-test app-image help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -92,3 +93,9 @@ registry-up: ## Create the ECR repo + GitHub OIDC role (not part of make up)
 
 registry-destroy: ## Delete the ECR repo (and its images) + OIDC role
 	@$(MAKE) --no-print-directory destroy STACK=registry
+
+secrets-up: ## Create SSM parameters (placeholders; set real values yourself)
+	@$(MAKE) --no-print-directory up STACK=secrets
+
+secrets-destroy: ## Delete the SSM parameters (and the values you set)
+	@$(MAKE) --no-print-directory destroy STACK=secrets

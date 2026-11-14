@@ -12,9 +12,11 @@ terraform/
     dns/                Route 53 A records
     ecr/                container image repository
     github_oidc/        IAM role GitHub Actions assumes to push images
+    ssm_secrets/        SecureString parameters whose values are set outside Terraform
   env/labs/             one root config ("stack") per directory, each with its own state
     network/  compute/  dns/  inventory/   applied by make up / make destroy
     registry/                              ECR + CI role, applied separately (make registry-up)
+    secrets/                               SSM parameters, applied separately (make secrets-up)
 ```
 
 Modules hold the resources. Each stack under `env/labs/` is a thin wrapper that calls one module (the `inventory` stack calls none). Stacks apply in this order and share data through `terraform_remote_state` (local state files):
@@ -146,6 +148,23 @@ The `compute` module also grants the instance role **pull-only** access to the `
 `env/labs/registry/` wires `ecr` and `github_oidc` together. It is **not** part of `make up` / `make destroy`, so tearing down the host doesn't delete your images or the CI role. Run it with `make registry-up` and remove it with `make registry-destroy`. It prints a `github_variables` output with the `gh variable set` commands for the repository variables a workflow needs.
 
 If `make registry-up` fails with `EntityAlreadyExists` for the OIDC provider, the account already has one: set `existing_oidc_provider_arn` in `registry/terraform.tfvars` (`arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`) and apply again.
+
+### ssm_secrets
+
+Creates `SecureString` parameters in SSM Parameter Store (encrypted with the AWS-managed `aws/ssm` key, which has no KMS charge; standard parameters are free). Each is created with the placeholder `REPLACE_ME`, and `ignore_changes = [value]` means Terraform never overwrites or stores the real value. The placeholder is deliberately shorter than any real secret, so forgetting to set it fails loudly.
+
+Input: `parameters`, a map of full parameter path to `{description}`. Outputs: `parameter_names`, `parameter_arns`.
+
+## The secrets stack
+
+`env/labs/secrets/` creates `/<name>/shortener/api_key` (the `x-api-key` for the shortener's management endpoints). Like the registry it is **not** part of `make up` / `make destroy`, so tearing down the host doesn't delete a value you've set. Run `make secrets-up`, then set the real value:
+
+```sh
+aws ssm put-parameter --name /sre-lab/shortener/api_key --type SecureString \
+  --overwrite --value "$(openssl rand -hex 24)"
+```
+
+or in the console (Systems Manager > Parameter Store > the parameter > Edit). Ansible reads parameters from your machine with your own AWS credentials and writes them to a root-only file on the host, so the instance role needs no access to them.
 
 ## The inventory stack
 
