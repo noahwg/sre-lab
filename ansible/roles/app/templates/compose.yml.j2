@@ -1,0 +1,30 @@
+# Managed by Ansible. Do not edit on the host.
+name: shortener
+
+services:
+  shortener:
+    image: {{ app_image }}
+    container_name: shortener
+    restart: unless-stopped
+    env_file:
+      - {{ app_dir }}/app.env
+    networks:
+      - {{ app_network }}
+    mem_limit: {{ app_memory_limit }}
+    # The image is distroless and the app only needs to listen on a port.
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/app/shortener", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  {{ app_network }}:
+    name: {{ app_network }}
+    external: true

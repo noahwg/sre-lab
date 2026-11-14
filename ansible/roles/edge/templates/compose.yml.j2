@@ -1,0 +1,30 @@
+# Managed by Ansible. Do not edit on the host.
+name: edge
+
+services:
+  caddy:
+    image: {{ edge_caddy_image }}
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - {{ edge_dir }}/Caddyfile:/etc/caddy/Caddyfile:ro
+      - {{ edge_data_dir }}:/data
+      - caddy_config:/config
+    networks:
+      - {{ edge_network }}
+    mem_limit: {{ edge_memory_limit }}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  {{ edge_network }}:
+    name: {{ edge_network }}
+
+volumes:
+  caddy_config:

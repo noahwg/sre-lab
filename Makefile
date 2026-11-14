@@ -25,7 +25,7 @@ export PATH  := $(abspath $(VENV))/bin:$(PATH)
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY := YES
 ANSIBLE_ARGS ?=
 
-.PHONY: secrets-up secrets-destroy registry-up registry-destroy app-test app-image help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
+.PHONY: deploy secrets-up secrets-destroy registry-up registry-destroy app-test app-image help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -99,3 +99,6 @@ secrets-up: ## Create SSM parameters (placeholders; set real values yourself)
 
 secrets-destroy: ## Delete the SSM parameters (and the values you set)
 	@$(MAKE) --no-print-directory destroy STACK=secrets
+
+deploy: venv ## Deploy the app (APP_TAG=shortener-<sha> overrides group_vars/all.yml)
+	cd $(ANSIBLE_DIR) && ansible-playbook site.yml --tags app $(if $(APP_TAG),-e app_image_tag=$(APP_TAG),) $(ANSIBLE_ARGS)

@@ -1,0 +1,25 @@
+---
+edge_dir: /opt/edge
+# Caddy's certificates and ACME account live here, on the root disk so they
+# survive container recreation (and don't depend on the telemetry volume).
+edge_data_dir: /var/lib/caddy
+
+edge_caddy_image: caddy:2.10-alpine
+edge_memory_limit: 128m
+
+# Let's Encrypt. Staging certificates are not trusted by browsers but have very
+# generous rate limits, so start there and flip to false once it works:
+#   make configure ANSIBLE_ARGS="--tags edge -e edge_acme_staging=false"
+edge_acme_staging: true
+# Optional contact address for expiry notices.
+edge_acme_email: ""
+
+# Sites Caddy serves. Each gets its own certificate. An empty upstream serves a
+# placeholder response; set it to "shortener:8080" once the app is deployed.
+# primary_fqdn comes from the Terraform-generated inventory.
+edge_sites:
+  - host: "{{ primary_fqdn }}"
+    upstream: ""
+
+# Shared Docker network. The app and monitoring compose projects join it as external.
+edge_network: edge

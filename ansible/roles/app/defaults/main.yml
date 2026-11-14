@@ -1,0 +1,19 @@
+---
+app_dir: /opt/shortener
+app_image_repository_name: sre-lab
+# Required: set in group_vars/all.yml or with -e. Format: shortener-<full commit sha>
+# app_image_tag:
+
+# SSM Parameter Store path of the API key (created by the secrets stack). Read
+# from the machine running Ansible, using your own AWS credentials.
+app_project: sre-lab
+app_api_key_parameter: "/{{ app_project }}/shortener/api_key"
+app_api_key_min_length: 16
+app_api_key_placeholder: REPLACE_ME
+
+app_memory_limit: 64m
+app_log_format: json
+app_log_level: info
+
+# Docker network created by the edge role.
+app_network: "{{ edge_network | default('edge') }}"

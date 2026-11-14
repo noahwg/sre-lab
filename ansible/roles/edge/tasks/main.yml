@@ -1,0 +1,77 @@
+---
+- name: Create edge directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ edge_dir }}"
+    - "{{ edge_data_dir }}"
+
+- name: Render the Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ edge_dir }}/Caddyfile"
+    owner: root
+    group: root
+    mode: "0644"
+  register: edge_caddyfile
+
+- name: Render the compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ edge_dir }}/compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+# Caddy reuses any valid certificate it finds for a name, whichever CA issued it,
+# so switching between staging and production would otherwise keep serving the old
+# one until it expires. Remove certificates from the CA we are NOT configured to use.
+- name: Remove certificates issued by the other CA
+  ansible.builtin.file:
+    path: "{{ edge_data_dir }}/caddy/certificates/{{ item }}"
+    state: absent
+  loop: "{{ ['acme-v02.api.letsencrypt.org-directory'] if edge_acme_staging else ['acme-staging-v02.api.letsencrypt.org-directory'] }}"
+  register: edge_stale_certs
+
+- name: Start Caddy
+  community.docker.docker_compose_v2:
+    project_src: "{{ edge_dir }}"
+    state: present
+  register: edge_compose
+
+# Certificates were removed from storage under a running Caddy: restart so it
+# forgets the cached one and obtains a new one. (A recreated container starts clean.)
+- name: Restart Caddy to pick up the new certificate
+  ansible.builtin.command:
+    cmd: docker restart caddy
+  when: edge_stale_certs is changed and edge_compose is not changed
+  changed_when: true
+
+# A bind-mounted Caddyfile change doesn't recreate the container, so reload in place.
+# (A fresh or recreated container already read the new file.)
+- name: Reload Caddy after a config-only change
+  ansible.builtin.command:
+    cmd: docker exec caddy caddy reload --config /etc/caddy/Caddyfile --force
+  when: edge_caddyfile is changed and edge_compose is not changed and edge_stale_certs is not changed
+  changed_when: true
+
+# Proves DNS, ports and certificate issuance end to end without relying on the
+# (untrusted, when staging) certificate: resolve each site to ourselves and
+# accept any cert. Retries cover ACME issuance on first start.
+- name: Wait for each site to answer over HTTPS
+  ansible.builtin.command:
+    cmd: >-
+      curl -sk --max-time 5 --resolve {{ item.host }}:443:127.0.0.1
+      -o /dev/null -w '%{http_code}' https://{{ item.host }}/
+  loop: "{{ edge_sites }}"
+  loop_control:
+    label: "{{ item.host }}"
+  register: edge_probe
+  until: edge_probe.stdout in ['200', '404', '502']
+  retries: 12
+  delay: 5
+  changed_when: false
