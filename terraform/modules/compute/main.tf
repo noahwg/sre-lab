@@ -1,5 +1,6 @@
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
+data "aws_region" "current" {}
 
 # Latest Amazon Linux 2023 (arm64, for Graviton). SSM agent is preinstalled.
 data "aws_ssm_parameter" "al2023_arm64" {
@@ -89,6 +90,31 @@ resource "aws_iam_role_policy" "ssm_transfer" {
   name   = "ssm-transfer-bucket"
   role   = aws_iam_role.host.id
   policy = data.aws_iam_policy_document.ssm_transfer.json
+}
+
+# Pull-only access to this project's ECR repository (named <name>), so the host can
+# `docker pull` with its instance role. The repository lives in the registry stack.
+data "aws_iam_policy_document" "ecr_pull" {
+  statement {
+    actions   = ["ecr:GetAuthorizationToken"]
+    resources = ["*"]
+  }
+  statement {
+    actions = [
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
+      "ecr:GetDownloadUrlForLayer",
+    ]
+    resources = [
+      "arn:${data.aws_partition.current.partition}:ecr:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:repository/${var.name}",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "ecr_pull" {
+  name   = "ecr-pull"
+  role   = aws_iam_role.host.id
+  policy = data.aws_iam_policy_document.ecr_pull.json
 }
 
 # ---------------------------------------------------------------------------
