@@ -8,6 +8,16 @@ variable "github_repository" {
   type        = string
 }
 
+variable "github_sub_prefix" {
+  description = <<-EOT
+    Prefix of the OIDC `sub` claim before ":ref:...". null uses the classic "repo:<owner>/<repo>".
+    Repositories using immutable subjects need the ID form instead, e.g. "repo:owner@12345/name@67890".
+    Find yours with: gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "github_refs" {
   description = "Git refs allowed to assume the role (pull requests are deliberately excluded)."
   type        = list(string)

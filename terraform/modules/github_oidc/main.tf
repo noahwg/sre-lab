@@ -9,6 +9,7 @@ resource "aws_iam_openid_connect_provider" "github" {
 }
 
 locals {
+  sub_prefix   = coalesce(var.github_sub_prefix, "repo:${var.github_repository}")
   provider_arn = var.existing_oidc_provider_arn != null ? var.existing_oidc_provider_arn : aws_iam_openid_connect_provider.github[0].arn
 }
 
@@ -31,7 +32,7 @@ data "aws_iam_policy_document" "assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = [for ref in var.github_refs : "repo:${var.github_repository}:ref:${ref}"]
+      values   = [for ref in var.github_refs : "${local.sub_prefix}:ref:${ref}"]
     }
   }
 }

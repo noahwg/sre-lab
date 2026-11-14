@@ -39,6 +39,20 @@ make registry-destroy   # deletes the repo and its images
    ```
 3. Run `make up STACK=compute` to add the pull policy to the instance role.
 
+### If the workflow fails with "Not authorized to perform sts:AssumeRoleWithWebIdentity"
+
+The role's trust policy didn't match the token's `sub` claim. GitHub repositories created recently use **immutable subjects**, where the claim carries numeric IDs (`repo:owner@12345/name@67890:ref:refs/heads/main`) instead of `repo:owner/name:ref:...`. Check yours:
+
+```sh
+gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+```
+
+If `use_immutable_subject` is true, copy the `sub_claim_prefix` value into `terraform/env/labs/registry/terraform.tfvars` and re-apply:
+
+```hcl
+github_sub_prefix = "repo:owner@12345/name@67890"
+```
+
 ## The workflow (`.github/workflows/app.yml`)
 
 | Event | What runs |
