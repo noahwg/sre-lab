@@ -15,6 +15,12 @@ variable "github_repository" {
   default     = "noahwg/sre-lab"
 }
 
+variable "github_sub_prefix" {
+  description = "OIDC sub-claim prefix. Set for repos with immutable subjects: see `gh api repos/<owner>/<repo>/actions/oidc/customization/sub`. null = classic repo:<owner>/<repo>."
+  type        = string
+  default     = null
+}
+
 variable "github_refs" {
   description = "Git refs allowed to push. Pull requests build but never push."
   type        = list(string)

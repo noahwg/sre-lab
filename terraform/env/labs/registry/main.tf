@@ -12,6 +12,7 @@ module "github_oidc" {
 
   name                       = var.name
   github_repository          = var.github_repository
+  github_sub_prefix          = var.github_sub_prefix
   github_refs                = var.github_refs
   ecr_repository_arn         = module.ecr.repository_arn
   existing_oidc_provider_arn = var.existing_oidc_provider_arn
