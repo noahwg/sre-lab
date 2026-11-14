@@ -10,8 +10,11 @@ terraform/
     network/            VPC, subnet, routing, security group
     compute/            instance, Elastic IP, IAM, telemetry volume, transfer bucket
     dns/                Route 53 A records
+    ecr/                container image repository
+    github_oidc/        IAM role GitHub Actions assumes to push images
   env/labs/             one root config ("stack") per directory, each with its own state
-    network/  compute/  dns/  inventory/
+    network/  compute/  dns/  inventory/   applied by make up / make destroy
+    registry/                              ECR + CI role, applied separately (make registry-up)
 ```
 
 Modules hold the resources. Each stack under `env/labs/` is a thin wrapper that calls one module (the `inventory` stack calls none). Stacks apply in this order and share data through `terraform_remote_state` (local state files):
@@ -124,6 +127,26 @@ How names are built: `"@"` is the zone apex; anything else becomes `<name>.<zone
 | `ttl` | `300` |
 
 Outputs: `fqdns` (map of record name to FQDN) and `zone_id`. The `dns` stack adds `primary_fqdn`, the FQDN of the first `record_names` entry.
+### ecr
+
+One shared private repository (named `name`, default `sre-lab`) for all of the project's images. Tags are **immutable**, images are scanned on push and encrypted (AES256), and a lifecycle policy expires everything beyond the newest `keep_image_count` (default 30). `force_delete` lets `destroy` remove a repository that still holds images.
+
+Outputs: `repository_url`, `repository_arn`, `repository_name`.
+
+### github_oidc
+
+Lets GitHub Actions push images without stored AWS keys. It creates the GitHub OIDC identity provider (or reuses one via `existing_oidc_provider_arn`, since an account can have only one) and the role `<name>-github-ci`. The role's trust policy only accepts `repo:<github_repository>:ref:<ref>` for the refs in `github_refs` (default `refs/heads/main`), so pull requests can't assume it. Its permissions are limited to pushing to the one ECR repository.
+
+Output: `role_arn`.
+
+The `compute` module also grants the instance role **pull-only** access to the `<name>` ECR repository, so the host can `docker pull` with no credentials.
+
+## The registry stack
+
+`env/labs/registry/` wires `ecr` and `github_oidc` together. It is **not** part of `make up` / `make destroy`, so tearing down the host doesn't delete your images or the CI role. Run it with `make registry-up` and remove it with `make registry-destroy`. It prints a `github_variables` output with the `gh variable set` commands for the repository variables a workflow needs.
+
+If `make registry-up` fails with `EntityAlreadyExists` for the OIDC provider, the account already has one: set `existing_oidc_provider_arn` in `registry/terraform.tfvars` (`arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`) and apply again.
+
 ## The inventory stack
 
 Reads the `compute` and `dns` outputs, renders `inventory/templates/inventory.yml.tftpl`, and writes `ansible/inventory/hosts.yml` (git-ignored, regenerated on every apply). It's also available via `make inventory`. Per host it provides:

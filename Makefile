@@ -1,5 +1,7 @@
 ENV          := terraform/env/labs
 ORDER        := network compute dns inventory
+# Registry (ECR + GitHub OIDC) has its own lifecycle: `make up` / `make destroy` leave it alone.
+ALL_STACKS   := registry $(ORDER)
 REVERSE      := inventory dns compute network
 STACK        ?=
 AUTO_APPROVE ?=
@@ -22,7 +24,7 @@ export PATH  := $(abspath $(VENV))/bin:$(PATH)
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY := YES
 ANSIBLE_ARGS ?=
 
-.PHONY: help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
+.PHONY: registry-up registry-destroy help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -35,7 +37,7 @@ check-vars:
 	@test -f $(ENV)/dns/terraform.tfvars || { echo "Missing $(ENV)/dns/terraform.tfvars (copy terraform.tfvars.example and set zone_name)"; exit 1; }
 
 init: ## terraform init in each stack
-	@for s in $(UP_STACKS); do $(call tf,$$s,init -input=false) || exit 1; done
+	@for s in $(or $(STACK),$(ALL_STACKS)); do $(call tf,$$s,init -input=false) || exit 1; done
 
 plan: check-vars ## Plan each stack (later stacks need upstream stacks applied first)
 	@for s in $(UP_STACKS); do echo "==> $$s"; $(call tf,$$s,init -input=false >/dev/null) && $(call tf,$$s,plan -input=false $(COMMON_VARS)) || exit 1; done
@@ -51,7 +53,7 @@ fmt: ## terraform fmt -recursive
 	terraform -chdir=terraform fmt -recursive
 
 validate: ## terraform validate in each stack
-	@for s in $(ORDER); do echo "==> $$s"; $(call tf,$$s,init -backend=false -input=false >/dev/null) && $(call tf,$$s,validate) || exit 1; done
+	@for s in $(ALL_STACKS); do echo "==> $$s"; $(call tf,$$s,init -backend=false -input=false >/dev/null) && $(call tf,$$s,validate) || exit 1; done
 
 inventory: ## Print the generated Ansible inventory
 	@$(call tf,inventory,output -raw ansible_inventory)
@@ -78,3 +80,9 @@ check: $(VENV)/.installed ## Dry-run the playbook (--check --diff)
 
 ping: $(VENV)/.installed ## Ansible ping over SSM
 	cd $(ANSIBLE_DIR) && ansible shortener -m ping $(ANSIBLE_ARGS)
+
+registry-up: ## Create the ECR repo + GitHub OIDC role (not part of make up)
+	@$(MAKE) --no-print-directory up STACK=registry
+
+registry-destroy: ## Delete the ECR repo (and its images) + OIDC role
+	@$(MAKE) --no-print-directory destroy STACK=registry
