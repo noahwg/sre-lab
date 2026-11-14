@@ -1,0 +1,72 @@
+name: app
+
+on:
+  pull_request:
+    paths: ["app/**", ".github/workflows/app.yml"]
+  push:
+    branches: [main]
+    paths: ["app/**", ".github/workflows/app.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # arm64 runner: tests and the image build natively on the architecture the host runs.
+    runs-on: ubuntu-24.04-arm
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+      - run: cargo test --locked
+
+  image:
+    needs: test
+    runs-on: ubuntu-24.04-arm
+    # Pull requests build the image to prove the Dockerfile works but never push.
+    env:
+      PUSH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: read
+      id-token: write # OIDC to AWS
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        if: env.PUSH == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        if: env.PUSH == 'true'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (and push on main)
+        uses: docker/build-push-action@v6
+        with:
+          context: app
+          platforms: linux/arm64
+          push: ${{ env.PUSH == 'true' }}
+          # Tagged with the full commit SHA. ECR tags are immutable, so a tag always means one build.
+          tags: ${{ steps.ecr.outputs.registry || 'local' }}/${{ vars.ECR_REPOSITORY || 'sre-lab' }}:shortener-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        if: env.PUSH == 'true'
+        run: |
+          echo "Pushed \`${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:shortener-${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"

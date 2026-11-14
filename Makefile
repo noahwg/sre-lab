@@ -24,7 +24,7 @@ export PATH  := $(abspath $(VENV))/bin:$(PATH)
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY := YES
 ANSIBLE_ARGS ?=
 
-.PHONY: registry-up registry-destroy help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
+.PHONY: registry-up registry-destroy app-test app-image help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -80,6 +80,12 @@ check: $(VENV)/.installed ## Dry-run the playbook (--check --diff)
 
 ping: $(VENV)/.installed ## Ansible ping over SSM
 	cd $(ANSIBLE_DIR) && ansible shortener -m ping $(ANSIBLE_ARGS)
+
+app-test: ## Run the app's tests in a Rust container (no local toolchain needed)
+	docker run --rm -v "$(CURDIR)/app":/src -w /src -v shortener-cargo:/usr/local/cargo/registry rust:1-slim-bookworm cargo test
+
+app-image: ## Build the arm64 app image (TAG=dev)
+	docker buildx build --platform linux/arm64 --load -t shortener:$(or $(TAG),dev) app
 
 registry-up: ## Create the ECR repo + GitHub OIDC role (not part of make up)
 	@$(MAKE) --no-print-directory up STACK=registry
