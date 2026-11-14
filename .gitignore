@@ -13,3 +13,6 @@ ansible/inventory/hosts.yml
 # Ansible
 ansible/collections/
 .venv/
+
+# Rust
+app/target/
