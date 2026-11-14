@@ -1,0 +1,113 @@
+---
+- name: Check the image tag is set
+  ansible.builtin.assert:
+    that:
+      - app_image_tag is defined
+      - app_image_tag is match('^shortener-[0-9a-f]{40}$')
+    fail_msg: "app_image_tag must look like shortener-<40 hex chars> (see ansible/group_vars/all.yml)"
+    quiet: true
+
+# These two steps run on the machine running Ansible, with your AWS credentials
+# (lookups always run on the controller).
+- name: Look up the AWS account
+  amazon.aws.aws_caller_info:
+    region: "{{ ansible_aws_ssm_region }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: app_caller
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+- name: Read the API key from SSM Parameter Store
+  ansible.builtin.set_fact:
+    app_api_key: "{{ lookup('amazon.aws.ssm_parameter', app_api_key_parameter, region=ansible_aws_ssm_region, decrypt=true) }}"
+  no_log: true
+
+- name: Refuse to deploy a missing or placeholder API key
+  ansible.builtin.assert:
+    that:
+      - app_api_key != app_api_key_placeholder
+      - app_api_key | length >= app_api_key_min_length
+    fail_msg: >-
+      {{ app_api_key_parameter }} is still the placeholder or shorter than
+      {{ app_api_key_min_length }} characters. Set a real value in Parameter Store.
+    quiet: true
+  no_log: true
+
+- name: Work out the image reference
+  ansible.builtin.set_fact:
+    app_registry: "{{ app_caller.account }}.dkr.ecr.{{ ansible_aws_ssm_region }}.amazonaws.com"
+    app_image: "{{ app_caller.account }}.dkr.ecr.{{ ansible_aws_ssm_region }}.amazonaws.com/{{ app_image_repository_name }}:{{ app_image_tag }}"
+
+- name: Create the app directory
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+# Uses the instance role (ecr:GetAuthorizationToken + pull). The token lasts 12 hours,
+# which only matters when pulling a new image, so running this each deploy is enough.
+- name: Log in to ECR on the host
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      aws ecr get-login-password --region {{ ansible_aws_ssm_region }}
+      | docker login --username AWS --password-stdin {{ app_registry }}
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+
+- name: Write the app environment file
+  ansible.builtin.template:
+    src: app.env.j2
+    dest: "{{ app_dir }}/app.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  register: app_env
+
+- name: Render the compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ app_dir }}/compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Start the app
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    state: present
+    remove_orphans: true
+    # env_file changes don't alter the compose file, so force a recreate when it changed.
+    recreate: "{{ 'always' if app_env is changed else 'auto' }}"
+  register: app_compose
+
+- name: Wait for the container to report healthy
+  ansible.builtin.command:
+    cmd: docker inspect --format '{% raw %}{{.State.Health.Status}}{% endraw %}' shortener
+  register: app_health
+  until: app_health.stdout == 'healthy'
+  retries: 12
+  delay: 5
+  changed_when: false
+
+# End to end through Caddy: DNS name -> TLS -> reverse proxy -> app.
+# -k because the certificate may still be a staging one.
+- name: Check the public site reaches the app
+  ansible.builtin.command:
+    cmd: >-
+      curl -sk --max-time 5 --resolve {{ primary_fqdn }}:443:127.0.0.1
+      -o /dev/null -w '%{http_code}' https://{{ primary_fqdn }}{{ item }}
+  loop:
+    - /healthz
+    - /readyz
+  register: app_probe
+  until: app_probe.stdout == '200'
+  retries: 6
+  delay: 5
+  changed_when: false

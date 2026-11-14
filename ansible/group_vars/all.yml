@@ -1,0 +1,13 @@
+---
+# What is deployed. Changing this and re-running `make deploy` is a deploy;
+# pointing it back at an older tag is a rollback.
+app_image_tag: shortener-2ed3f4ec78e7b12d3f5b90cf7e11a227f4841fc0
+
+# Real Let's Encrypt certificates (browser-trusted). Set true to test issuance
+# against the staging CA, which has generous rate limits but is not trusted.
+edge_acme_staging: false
+
+# Route the public site to the app (the edge role defaults to a placeholder).
+edge_sites:
+  - host: "{{ primary_fqdn }}"
+    upstream: "shortener:8080"

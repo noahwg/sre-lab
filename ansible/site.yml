@@ -5,3 +5,7 @@
   roles:
     - role: base
       tags: [base]
+    - role: edge
+      tags: [edge]
+    - role: app
+      tags: [app]

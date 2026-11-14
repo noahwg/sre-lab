@@ -1,0 +1,27 @@
+# Managed by Ansible. Do not edit on the host.
+{
+{% if edge_acme_email %}
+	email {{ edge_acme_email }}
+{% endif %}
+{% if edge_acme_staging %}
+	# Staging CA: certificates are NOT trusted by browsers.
+	acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+{% endif %}
+}
+{% for site in edge_sites %}
+
+{{ site.host }} {
+	encode zstd gzip
+
+	# Metrics are scraped on the internal network and must not be public.
+	@metrics path /metrics
+	respond @metrics 404
+{% if site.upstream %}
+
+	reverse_proxy {{ site.upstream }}
+{% else %}
+
+	respond "sre-lab edge ok" 200
+{% endif %}
+}
+{% endfor %}
