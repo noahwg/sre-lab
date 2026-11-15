@@ -18,7 +18,7 @@ use crate::{
     codes,
     config::Config,
     error::AppError,
-    store::{Link, LinkStore},
+    store::{Link, LinkStore, StoreError},
 };
 
 const MAX_CODE_ATTEMPTS: usize = 5;
@@ -118,7 +118,7 @@ async fn metrics_endpoint(State(s): State<AppState>) -> impl IntoResponse {
 // ---------- the redirect ----------
 
 async fn redirect(State(s): State<AppState>, Path(code): Path<String>) -> Result<Response, AppError> {
-    let Some(link) = s.store.get(&code).await else {
+    let Some(link) = s.store.get(&code).await? else {
         counter!("redirects_total", "outcome" => "not_found").increment(1);
         return Err(AppError::NotFound);
     };
@@ -180,19 +180,24 @@ async fn create_link(
     let code = match req.custom_code {
         Some(code) => {
             codes::validate_custom(&code).map_err(AppError::BadRequest)?;
-            s.store
-                .insert(new_link(code.clone()))
-                .await
-                .map_err(|_| AppError::Conflict("custom_code is already in use".into()))?;
+            s.store.insert(new_link(code.clone())).await.map_err(|e| match e {
+                StoreError::Conflict => AppError::Conflict("custom_code is already in use".into()),
+                StoreError::Unavailable => AppError::Unavailable,
+            })?;
             code
         }
         None => {
             let mut chosen = None;
             for _ in 0..MAX_CODE_ATTEMPTS {
                 let code = codes::generate();
-                if s.store.insert(new_link(code.clone())).await.is_ok() {
-                    chosen = Some(code);
-                    break;
+                match s.store.insert(new_link(code.clone())).await {
+                    Ok(()) => {
+                        chosen = Some(code);
+                        break;
+                    }
+                    // Unlucky collision: try another code.
+                    Err(StoreError::Conflict) => {}
+                    Err(StoreError::Unavailable) => return Err(AppError::Unavailable),
                 }
             }
             chosen.ok_or(AppError::Internal)?
@@ -225,7 +230,7 @@ async fn link_details(
     State(s): State<AppState>,
     Path(code): Path<String>,
 ) -> Result<Json<LinkDetails>, AppError> {
-    let l = s.store.get(&code).await.ok_or(AppError::NotFound)?;
+    let l = s.store.get(&code).await?.ok_or(AppError::NotFound)?;
     Ok(Json(LinkDetails {
         code: l.code,
         url: l.url,
@@ -239,7 +244,7 @@ async fn delete_link(
     State(s): State<AppState>,
     Path(code): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    if s.store.delete(&code).await {
+    if s.store.delete(&code).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(AppError::NotFound)

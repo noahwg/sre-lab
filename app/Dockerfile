@@ -3,14 +3,16 @@ FROM rust:1-slim-bookworm AS build
 WORKDIR /src
 
 # Build dependencies first so they're cached unless Cargo.toml/Cargo.lock change.
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock build.rs ./
 RUN mkdir src && echo 'fn main() {}' > src/main.rs && touch src/lib.rs \
     && cargo build --release --locked && rm -rf src
 
+# The migrations are embedded into the binary at compile time.
+COPY migrations ./migrations
 COPY src ./src
 RUN touch src/main.rs src/lib.rs && cargo build --release --locked
 
-# distroless has no shell or curl; the binary has its own `healthcheck` subcommand.
+# distroless has no shell or curl; the binary has its own `healthcheck` and `migrate` subcommands.
 FROM gcr.io/distroless/cc-debian12:nonroot
 COPY --from=build /src/target/release/shortener /app/shortener
 ENV BIND_ADDR=0.0.0.0:8080

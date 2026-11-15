@@ -16,17 +16,19 @@ pub struct Link {
 pub enum StoreError {
     /// The code is already taken.
     Conflict,
+    /// The backing store could not be reached or failed; the caller should answer 503.
+    Unavailable,
 }
 
-/// Storage boundary. `MemoryStore` backs it for now; a Postgres implementation
-/// replaces it without touching the handlers.
+/// Storage boundary. `PgStore` backs production; `MemoryStore` is for tests and for
+/// running locally without a database.
 #[async_trait]
 pub trait LinkStore: Send + Sync {
     async fn insert(&self, link: Link) -> Result<(), StoreError>;
-    async fn get(&self, code: &str) -> Option<Link>;
+    async fn get(&self, code: &str) -> Result<Option<Link>, StoreError>;
     /// Count one redirect. Fire-and-forget from the caller's point of view.
     async fn record_hit(&self, code: &str);
-    async fn delete(&self, code: &str) -> bool;
+    async fn delete(&self, code: &str) -> Result<bool, StoreError>;
     /// Readiness probe: can the store serve requests?
     async fn ping(&self) -> bool;
 }
@@ -53,8 +55,8 @@ impl LinkStore for MemoryStore {
         Ok(())
     }
 
-    async fn get(&self, code: &str) -> Option<Link> {
-        self.links.read().expect("store lock poisoned").get(code).cloned()
+    async fn get(&self, code: &str) -> Result<Option<Link>, StoreError> {
+        Ok(self.links.read().expect("store lock poisoned").get(code).cloned())
     }
 
     async fn record_hit(&self, code: &str) {
@@ -63,8 +65,8 @@ impl LinkStore for MemoryStore {
         }
     }
 
-    async fn delete(&self, code: &str) -> bool {
-        self.links.write().expect("store lock poisoned").remove(code).is_some()
+    async fn delete(&self, code: &str) -> Result<bool, StoreError> {
+        Ok(self.links.write().expect("store lock poisoned").remove(code).is_some())
     }
 
     async fn ping(&self) -> bool {

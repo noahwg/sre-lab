@@ -22,12 +22,34 @@ jobs:
     defaults:
       run:
         working-directory: app
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: shortener
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app
-      - run: cargo test --locked
+      # The migrations must apply to an empty database, and applying them again must be a no-op.
+      - name: Migrations apply cleanly, and twice
+        env:
+          DATABASE_URL: postgres://postgres:ci@localhost:5432/shortener?sslmode=disable
+        run: |
+          cargo run --locked -q -- migrate | tee first.log
+          cargo run --locked -q -- migrate | tee second.log
+          grep -q 'applied 0 new' second.log
+      # With DATABASE_URL set, the Postgres store tests run against the migrated database.
+      - name: cargo test
+        env:
+          DATABASE_URL: postgres://postgres:ci@localhost:5432/shortener?sslmode=disable
+        run: cargo test --locked
 
   image:
     needs: test
