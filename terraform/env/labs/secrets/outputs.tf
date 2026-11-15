@@ -8,5 +8,7 @@ output "set_value_hint" {
     Set each real value in the console (Systems Manager > Parameter Store > Edit), or:
       aws ssm put-parameter --region ${var.region} --name /${var.name}/shortener/api_key \
         --type SecureString --overwrite --value "$(openssl rand -hex 24)"
+      # same for /${var.name}/postgres/owner_password and /${var.name}/postgres/app_password
+      # (use hex, not base64, so the passwords are safe inside a connection URL)
   EOT
 }

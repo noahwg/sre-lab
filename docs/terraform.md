@@ -157,12 +157,14 @@ Input: `parameters`, a map of full parameter path to `{description}`. Outputs: `
 
 ## The secrets stack
 
-`env/labs/secrets/` creates `/<name>/shortener/api_key` (the `x-api-key` for the shortener's management endpoints). Like the registry it is **not** part of `make up` / `make destroy`, so tearing down the host doesn't delete a value you've set. Run `make secrets-up`, then set the real value:
+`env/labs/secrets/` creates `/<name>/shortener/api_key` (the `x-api-key` for the shortener's management endpoints) and the two Postgres passwords, `/<name>/postgres/owner_password` and `/<name>/postgres/app_password`. Like the registry it is **not** part of `make up` / `make destroy`, so tearing down the host doesn't delete a value you've set. Run `make secrets-up`, then set the real value:
 
 ```sh
 aws ssm put-parameter --name /sre-lab/shortener/api_key --type SecureString \
   --overwrite --value "$(openssl rand -hex 24)"
 ```
+
+Use hex values (`openssl rand -hex 24`) for the Postgres passwords: the role refuses anything that isn't alphanumeric, so they are always safe in connection URLs.
 
 or in the console (Systems Manager > Parameter Store > the parameter > Edit). Ansible reads parameters from your machine with your own AWS credentials and writes them to a root-only file on the host, so the instance role needs no access to them.
 

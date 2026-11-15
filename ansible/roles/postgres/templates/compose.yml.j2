@@ -1,0 +1,45 @@
+# Managed by Ansible. Do not edit on the host.
+name: postgres
+
+services:
+  postgres:
+    image: {{ postgres_image }}
+    container_name: postgres
+    restart: unless-stopped
+    env_file:
+      - {{ postgres_dir }}/postgres.env
+    command:
+      - postgres
+{% for key, value in postgres_settings.items() %}
+      - -c
+      - "{{ key }}={{ value }}"
+{% endfor %}
+    volumes:
+      - {{ postgres_data_dir }}:/var/lib/postgresql/data
+    networks:
+      - {{ postgres_network }}
+    mem_limit: {{ postgres_memory_limit }}
+    shm_size: {{ postgres_shm_size }}
+    cpu_shares: {{ postgres_cpu_shares }}
+    # The entrypoint starts as root, fixes ownership, then drops to the postgres user.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{ postgres_owner_user }} -d {{ postgres_db }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+networks:
+  {{ postgres_network }}:
+    name: {{ postgres_network }}
+    internal: true
