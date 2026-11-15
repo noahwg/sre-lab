@@ -18,11 +18,13 @@ app_log_level: info
 # Docker network created by the edge role.
 app_network: "{{ edge_network | default('edge') }}"
 
-# Database. Migrations run as the Postgres owner role on the private `db` network
-# (see the postgres role for the user, database and network names).
+# Database, on the private `db` network (see the postgres role for the names). The app
+# connects as the restricted app role; migrations run as the owner role.
 app_db_host: postgres
 app_db_name: "{{ postgres_db | default('shortener') }}"
 app_db_owner_user: "{{ postgres_owner_user | default('shortener_owner') }}"
 app_db_network: "{{ postgres_network | default('db') }}"
 app_db_owner_password_parameter: "/{{ app_project }}/postgres/owner_password"
+app_db_app_user: "{{ postgres_app_user | default('shortener_app') }}"
+app_db_app_password_parameter: "/{{ app_project }}/postgres/app_password"
 app_migrate_memory_limit: 64m

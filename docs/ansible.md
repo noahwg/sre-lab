@@ -54,7 +54,7 @@ Defaults live in `roles/base/defaults/main.yml` (swap size, Compose version, jou
 
 ## Role: postgres
 
-Runs Postgres in Docker from `/opt/postgres`. Nothing connects to it yet; the app switches over once its Postgres-backed store and migrations exist.
+Runs Postgres in Docker from `/opt/postgres`. The app connects to it over the private `db` network (see the app role).
 
 - **Private by construction.** It publishes no ports and sits on a Docker network named `db` marked `internal`, so it has no route in or out except to containers that join that network (the app will). Caddy is not on it.
 - **Sized for a 2 GB host.** `mem_limit` 384 MB, `shared_buffers` 96 MB, 20 connections, `cpu_shares` 512 (a relative weight under contention, deliberately not a pinned core). Tunables are in `roles/postgres/defaults/main.yml`.
@@ -125,7 +125,7 @@ make deploy APP_TAG=shortener-<sha>           # one-off override, e.g. a rollbac
 
 `group_vars/all.yml` also sets `edge_sites` to proxy to `shortener:8080`. That change is applied by the `edge` role, so the **first** deploy needs `make configure ANSIBLE_ARGS="--tags edge,app"`. Later deploys only need `make deploy`.
 
-Storage is in memory for now, so links disappear when the container restarts.
+Links are stored in Postgres. The app joins the `db` network and connects as the restricted `shortener_app` role: the role reads its password from SSM and writes `DATABASE_URL` into the root-only `app.env`. Deploying therefore needs the `postgres` role to have run first (`make configure` does this in order).
 
 ### Try it
 

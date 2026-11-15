@@ -25,6 +25,20 @@
     quiet: true
   no_log: true
 
+- name: Read the database connection string
+  ansible.builtin.set_fact:
+    app_database_url: >-
+      postgres://{{ app_db_app_user }}:{{ lookup('amazon.aws.ssm_parameter', app_db_app_password_parameter, region=ansible_aws_ssm_region, decrypt=true) }}@{{ app_db_host }}:5432/{{ app_db_name }}?sslmode=disable
+  no_log: true
+
+- name: Refuse to deploy with a placeholder database password
+  ansible.builtin.assert:
+    that:
+      - "'REPLACE_ME' not in app_database_url"
+    fail_msg: "{{ app_db_app_password_parameter }} is still the placeholder. Set a real value in Parameter Store."
+    quiet: true
+  no_log: true
+
 - name: Create the app directory
   ansible.builtin.file:
     path: "{{ app_dir }}"

@@ -1,12 +1,18 @@
 use std::{process::ExitCode, sync::Arc, time::Duration};
 
-use shortener::{config::Config, router, store::MemoryStore, telemetry, AppState};
+use shortener::{
+    config::Config,
+    pg_store::PgStore,
+    router,
+    store::{LinkStore, MemoryStore},
+    telemetry, AppState,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     time::timeout,
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -37,10 +43,27 @@ async fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
+    let store: Arc<dyn LinkStore> = match std::env::var("DATABASE_URL") {
+        // Lazy: the app starts even if Postgres is briefly down, and /readyz reports it.
+        Ok(url) => match PgStore::connect_lazy(&url) {
+            Ok(s) => {
+                info!("using the Postgres store");
+                Arc::new(s)
+            }
+            Err(e) => {
+                error!("DATABASE_URL: {e}");
+                return ExitCode::from(2);
+            }
+        },
+        Err(_) => {
+            warn!("DATABASE_URL is not set: using the in-memory store, links are lost on restart");
+            Arc::new(MemoryStore::new())
+        }
+    };
+
     let bind_addr = config.bind_addr;
     let state = AppState {
-        // TODO: swap for the Postgres-backed store once the database exists.
-        store: Arc::new(MemoryStore::new()),
+        store,
         config: Arc::new(config),
         metrics,
     };
