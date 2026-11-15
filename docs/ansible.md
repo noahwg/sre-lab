@@ -115,7 +115,10 @@ What it does, in order:
 4. Starts the container on the shared `edge` network with no published ports, a 64 MB limit, a read-only filesystem, all capabilities dropped, and a healthcheck.
 5. Waits for the container to report `healthy`, then checks `/healthz` and `/readyz` end to end through Caddy.
 
+**Migrations.** Before the app starts, the role runs `shortener migrate` from the image being deployed, as a one-off container on the `db` network, as the Postgres owner role (password read from SSM on your machine and passed through the environment). It is idempotent and reports `changed` only when it applied something. To apply migrations without redeploying the app: `make migrate`. This needs the Postgres container running and an `app_image_tag` whose image contains the `migrate` subcommand.
+
 ```sh
+make migrate                                  # apply pending migrations only
 make deploy                                   # deploy the tag in group_vars/all.yml
 make deploy APP_TAG=shortener-<sha>           # one-off override, e.g. a rollback
 ```

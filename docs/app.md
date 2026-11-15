@@ -47,3 +47,13 @@ The runtime image is distroless (no shell or curl), so the container healthcheck
 ## Not done yet
 
 Postgres store, OTLP trace export, rate limiting, and the Ansible deploy role plus ECR.
+
+## Database migrations
+
+Schema changes are SQL files in `app/migrations/` (`0001_create_links.sql`, ...). They are embedded into the binary at build time (`sqlx::migrate!`), so the image carries its own migrations, which matters because the runtime image has no shell or `psql`.
+
+- `shortener migrate` applies the pending files using `DATABASE_URL` and exits. It prints `migrate: applied N new, M total`.
+- sqlx records each applied file, with a checksum, in `_sqlx_migrations`, and takes an advisory lock, so it is safe to run on every deploy and safe to run concurrently. **Editing an already-applied file fails** (`was previously applied but has been modified`). Add a new numbered file instead.
+- It must run as the **owner** role (`shortener_owner`). The app's own runtime role cannot create or alter tables.
+
+On the host, `make migrate` runs it as a one-off container on the `db` network (see [ansible.md](ansible.md#role-app)). `make deploy` runs it too, before starting the app.

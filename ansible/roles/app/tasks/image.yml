@@ -1,0 +1,39 @@
+---
+# Shared by the migrate and app steps: validate the tag, work out the ECR image
+# reference and log Docker in to ECR.
+- name: Check the image tag is set
+  ansible.builtin.assert:
+    that:
+      - app_image_tag is defined
+      - app_image_tag is match('^shortener-[0-9a-f]{40}$')
+    fail_msg: "app_image_tag must look like shortener-<40 hex chars> (see ansible/group_vars/all.yml)"
+    quiet: true
+
+# These two steps run on the machine running Ansible, with your AWS credentials
+# (lookups always run on the controller).
+- name: Look up the AWS account
+  amazon.aws.aws_caller_info:
+    region: "{{ ansible_aws_ssm_region }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: app_caller
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+- name: Work out the image reference
+  ansible.builtin.set_fact:
+    app_registry: "{{ app_caller.account }}.dkr.ecr.{{ ansible_aws_ssm_region }}.amazonaws.com"
+    app_image: "{{ app_caller.account }}.dkr.ecr.{{ ansible_aws_ssm_region }}.amazonaws.com/{{ app_image_repository_name }}:{{ app_image_tag }}"
+
+# Uses the instance role (ecr:GetAuthorizationToken + pull). The token lasts 12 hours,
+# which only matters when pulling a new image, so running this each deploy is enough.
+- name: Log in to ECR on the host
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      aws ecr get-login-password --region {{ ansible_aws_ssm_region }}
+      | docker login --username AWS --password-stdin {{ app_registry }}
+    executable: /bin/bash
+  changed_when: false
+  no_log: true

@@ -57,7 +57,7 @@ github_sub_prefix = "repo:owner@12345/name@67890"
 
 | Event | What runs |
 |---|---|
-| Pull request touching `app/` | `cargo test`, then a `docker build` that is **not pushed** |
+| Pull request touching `app/` | `cargo test`, a check that the migrations apply to an empty Postgres (and that a second run is a no-op), then a `docker build` that is **not pushed** |
 | Push to `main` touching `app/` | tests, then build and **push** `<registry>/sre-lab:shortener-<github.sha>` |
 
 Both jobs run on GitHub's `ubuntu-24.04-arm` runners, so the build is native arm64 with no QEMU emulation. Those runners are free for public repositories. If the repo is private, switch to `ubuntu-latest` with QEMU (slower).

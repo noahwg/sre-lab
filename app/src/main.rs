@@ -18,6 +18,10 @@ async fn main() -> ExitCode {
 
     telemetry::init_logging();
 
+    if std::env::args().nth(1).as_deref() == Some("migrate") {
+        return migrate().await;
+    }
+
     let config = match Config::from_env() {
         Ok(c) => c,
         Err(e) => {
@@ -103,5 +107,20 @@ async fn healthcheck() -> ExitCode {
     match timeout(Duration::from_secs(2), probe).await {
         Ok(Some(())) => ExitCode::SUCCESS,
         _ => ExitCode::FAILURE,
+    }
+}
+
+/// `shortener migrate`: apply pending database migrations and exit.
+async fn migrate() -> ExitCode {
+    let Ok(url) = std::env::var("DATABASE_URL") else {
+        error!("DATABASE_URL is required");
+        return ExitCode::from(2);
+    };
+    match shortener::migrate::run(&url).await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            error!("migration failed: {e}");
+            ExitCode::FAILURE
+        }
     }
 }

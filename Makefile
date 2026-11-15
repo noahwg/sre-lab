@@ -25,7 +25,7 @@ export PATH  := $(abspath $(VENV))/bin:$(PATH)
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY := YES
 ANSIBLE_ARGS ?=
 
-.PHONY: deploy secrets-up secrets-destroy registry-up registry-destroy app-test app-image help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
+.PHONY: migrate deploy secrets-up secrets-destroy registry-up registry-destroy app-test app-image help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -83,7 +83,7 @@ ping: $(VENV)/.installed ## Ansible ping over SSM
 	cd $(ANSIBLE_DIR) && ansible shortener -m ping $(ANSIBLE_ARGS)
 
 app-test: ## Run the app's tests in a Rust container (no local toolchain needed)
-	docker run --rm -v "$(CURDIR)/app":/src -w /src -v shortener-cargo:/usr/local/cargo/registry rust:1-slim-bookworm cargo test
+	docker run --rm -v "$(CURDIR)/app":/src -w /src -e CARGO_TARGET_DIR=/tmp/target -v shortener-cargo:/usr/local/cargo/registry rust:1-slim-bookworm cargo test
 
 app-image: ## Build the arm64 app image (TAG=dev)
 	docker buildx build --platform linux/arm64 --load -t shortener:$(or $(TAG),dev) app
@@ -99,6 +99,9 @@ secrets-up: ## Create SSM parameters (placeholders; set real values yourself)
 
 secrets-destroy: ## Delete the SSM parameters (and the values you set)
 	@$(MAKE) --no-print-directory destroy STACK=secrets
+
+migrate: venv ## Apply database migrations from the deployed image (APP_TAG=... to override)
+	cd $(ANSIBLE_DIR) && ansible-playbook site.yml --tags migrate $(if $(APP_TAG),-e app_image_tag=$(APP_TAG),) $(ANSIBLE_ARGS)
 
 deploy: venv ## Deploy the app (APP_TAG=shortener-<sha> overrides group_vars/all.yml)
 	cd $(ANSIBLE_DIR) && ansible-playbook site.yml --tags app $(if $(APP_TAG),-e app_image_tag=$(APP_TAG),) $(ANSIBLE_ARGS)
