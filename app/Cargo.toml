@@ -13,6 +13,8 @@ metrics-exporter-prometheus = { version = "0.16", default-features = false }
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# No TLS feature: Postgres is only reachable over the private Docker network.
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres", "migrate", "macros", "chrono"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time", "io-util"] }
 tower-http = { version = "0.6", features = ["trace"] }
 tracing = "0.1"

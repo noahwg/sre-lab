@@ -30,3 +30,12 @@ impl IntoResponse for AppError {
         (status, Json(json!({ "error": msg }))).into_response()
     }
 }
+
+impl From<crate::store::StoreError> for AppError {
+    fn from(e: crate::store::StoreError) -> Self {
+        match e {
+            crate::store::StoreError::Conflict => Self::Conflict("already exists".into()),
+            crate::store::StoreError::Unavailable => Self::Unavailable,
+        }
+    }
+}

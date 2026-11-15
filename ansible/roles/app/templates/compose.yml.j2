@@ -10,6 +10,7 @@ services:
       - {{ app_dir }}/app.env
     networks:
       - {{ app_network }}
+      - {{ app_db_network }}
     mem_limit: {{ app_memory_limit }}
     # The image is distroless and the app only needs to listen on a port.
     read_only: true
@@ -27,4 +28,7 @@ services:
 networks:
   {{ app_network }}:
     name: {{ app_network }}
+    external: true
+  {{ app_db_network }}:
+    name: {{ app_db_network }}
     external: true

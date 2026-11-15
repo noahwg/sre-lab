@@ -1,0 +1,35 @@
+---
+# Runs `shortener migrate` from the image being deployed, as a one-off container on the
+# db network, authenticating as the owner role. The password is read on this machine
+# and handed to the container through the environment, never on a command line.
+- name: Read the Postgres owner password from SSM Parameter Store
+  ansible.builtin.set_fact:
+    app_migrate_database_url: >-
+      postgres://{{ app_db_owner_user }}:{{ lookup('amazon.aws.ssm_parameter', app_db_owner_password_parameter, region=ansible_aws_ssm_region, decrypt=true) }}@{{ app_db_host }}:5432/{{ app_db_name }}?sslmode=disable
+  no_log: true
+
+- name: Apply pending migrations
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --pull=missing
+      - --network={{ app_db_network }}
+      - --memory={{ app_migrate_memory_limit }}
+      - --read-only
+      - --cap-drop=ALL
+      - --security-opt=no-new-privileges:true
+      - -e
+      - DATABASE_URL
+      - "{{ app_image }}"
+      - migrate
+  environment:
+    DATABASE_URL: "{{ app_migrate_database_url }}"
+  register: app_migrate
+  # The migrate subcommand prints "migrate: applied N new, M total".
+  changed_when: "'applied 0 new' not in app_migrate.stdout"
+
+- name: Show the migration result
+  ansible.builtin.debug:
+    msg: "{{ app_migrate.stdout_lines | select('match', '^migrate:') | list }}"
