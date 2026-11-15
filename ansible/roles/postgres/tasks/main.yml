@@ -1,0 +1,103 @@
+---
+# Both lookups run on the machine running Ansible, with your AWS credentials.
+- name: Read the Postgres passwords from SSM Parameter Store
+  ansible.builtin.set_fact:
+    postgres_owner_password: "{{ lookup('amazon.aws.ssm_parameter', postgres_owner_password_parameter, region=ansible_aws_ssm_region, decrypt=true) }}"
+    postgres_app_password: "{{ lookup('amazon.aws.ssm_parameter', postgres_app_password_parameter, region=ansible_aws_ssm_region, decrypt=true) }}"
+  no_log: true
+
+# Alphanumeric only, so the values are safe in env files, SQL and connection URLs.
+- name: Refuse missing, placeholder or unsafe passwords
+  ansible.builtin.assert:
+    that:
+      - item != postgres_password_placeholder
+      - item | length >= postgres_password_min_length
+      - item is match('^[A-Za-z0-9]+$')
+    fail_msg: >-
+      A Postgres password in Parameter Store is still the placeholder, shorter than
+      {{ postgres_password_min_length }} characters, or not alphanumeric
+      (generate with: openssl rand -hex 24).
+    quiet: true
+  loop:
+    - "{{ postgres_owner_password }}"
+    - "{{ postgres_app_password }}"
+  no_log: true
+
+- name: Create the Postgres directory
+  ansible.builtin.file:
+    path: "{{ postgres_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Create the data directory
+  ansible.builtin.file:
+    path: "{{ postgres_data_dir }}"
+    state: directory
+    owner: "{{ postgres_uid }}"
+    group: "{{ postgres_uid }}"
+    mode: "0700"
+
+# Read by the container only on the very first start; after that the password lives
+# in the database. Changing the SSM value later does NOT change the owner password.
+- name: Write the Postgres environment file
+  ansible.builtin.template:
+    src: postgres.env.j2
+    dest: "{{ postgres_dir }}/postgres.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  register: postgres_env
+
+- name: Render the compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ postgres_dir }}/compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  register: postgres_compose_file
+
+- name: Start Postgres
+  community.docker.docker_compose_v2:
+    project_src: "{{ postgres_dir }}"
+    state: present
+    remove_orphans: true
+  register: postgres_compose
+
+- name: Wait for Postgres to report healthy
+  ansible.builtin.command:
+    cmd: docker inspect --format '{% raw %}{{.State.Health.Status}}{% endraw %}' postgres
+  register: postgres_health
+  until: postgres_health.stdout == 'healthy'
+  retries: 18
+  delay: 5
+  changed_when: false
+
+# Idempotent: creates the runtime role, syncs its password from SSM, and grants it
+# data access only (no DDL). Connects over the container's local socket as the owner.
+- name: Create or update the runtime role
+  ansible.builtin.command:
+    cmd: >-
+      docker exec -i postgres psql -X -q -v ON_ERROR_STOP=1
+      -U {{ postgres_owner_user }} -d {{ postgres_db }}
+    stdin: "{{ lookup('ansible.builtin.template', 'roles.sql.j2') }}"
+  no_log: true
+  changed_when: false
+
+# Connects over TCP by hostname, which requires password authentication. This is the
+# same path the app will use.
+- name: Check the runtime role can log in with its password
+  ansible.builtin.command:
+    cmd: >-
+      docker exec -i -e PGPASSWORD postgres
+      psql -X -tA -h postgres -U {{ postgres_app_user }} -d {{ postgres_db }}
+      -c 'SELECT current_user'
+  environment:
+    PGPASSWORD: "{{ postgres_app_password }}"
+  register: postgres_login
+  failed_when: postgres_login.stdout | trim != postgres_app_user
+  changed_when: false
+  no_log: true

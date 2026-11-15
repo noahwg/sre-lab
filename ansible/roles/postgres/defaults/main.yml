@@ -1,0 +1,40 @@
+---
+postgres_dir: /opt/postgres
+# Bind-mounted data directory (root disk). Owned by uid 70, the postgres user in the alpine image.
+postgres_data_dir: /var/lib/postgres
+postgres_uid: 70
+postgres_image: postgres:17-alpine
+
+postgres_db: shortener
+# Superuser created at first start. Runs migrations; never used by the app at runtime.
+postgres_owner_user: shortener_owner
+# Restricted role the app connects as: DML only, no DDL.
+postgres_app_user: shortener_app
+
+# Docker network shared with the app. Internal: no route to the outside world.
+postgres_network: db
+
+# The host has 2 GB shared with Caddy, the app and the monitoring stack.
+postgres_memory_limit: 384m
+postgres_shm_size: 64m
+# Relative CPU weight under contention (Caddy and the app use 1024). No pinning.
+postgres_cpu_shares: 512
+
+postgres_settings:
+  shared_buffers: 96MB
+  effective_cache_size: 256MB
+  work_mem: 4MB
+  maintenance_work_mem: 32MB
+  max_connections: "20"
+  wal_compression: "on"
+  max_wal_size: 512MB
+  log_min_duration_statement: "500"
+  log_line_prefix: "'%m [%p] %u@%d '"
+
+# Secrets: SSM Parameter Store paths (created by the secrets stack), read on the
+# machine running Ansible with your own AWS credentials.
+postgres_project: sre-lab
+postgres_owner_password_parameter: "/{{ postgres_project }}/postgres/owner_password"
+postgres_app_password_parameter: "/{{ postgres_project }}/postgres/app_password"
+postgres_password_min_length: 16
+postgres_password_placeholder: REPLACE_ME
