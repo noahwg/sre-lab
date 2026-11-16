@@ -69,13 +69,18 @@
   notify: restart grafana
 
 # Grafana re-reads this directory every 30 seconds, so no restart is needed.
+# __INSTANCE_ID__ in the CloudWatch queries is replaced with this host's instance ID
+# (a wildcard dimension returned no data), so the files are written from content.
 - name: Install the dashboards
   ansible.builtin.copy:
-    src: dashboards/
-    dest: "{{ monitoring_dir }}/dashboards/"
+    content: "{{ lookup('ansible.builtin.file', item) | replace('__INSTANCE_ID__', ansible_host) }}"
+    dest: "{{ monitoring_dir }}/dashboards/{{ item | basename }}"
     owner: root
     group: root
     mode: "0644"
+  loop: "{{ lookup('ansible.builtin.fileglob', role_path ~ '/files/dashboards/*.json', wantlist=True) }}"
+  loop_control:
+    label: "{{ item | basename }}"
 
 - name: Write the Grafana environment file
   ansible.builtin.template:
