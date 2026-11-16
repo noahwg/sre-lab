@@ -25,7 +25,7 @@ export PATH  := $(abspath $(VENV))/bin:$(PATH)
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY := YES
 ANSIBLE_ARGS ?=
 
-.PHONY: migrate deploy secrets-up secrets-destroy registry-up registry-destroy app-test app-image help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
+.PHONY: grafana vmui migrate deploy secrets-up secrets-destroy registry-up registry-destroy app-test app-image help up destroy plan init fmt validate inventory ssm check-vars venv deps configure ping check
 
 help: ## Show targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -61,6 +61,12 @@ inventory: ## Print the generated Ansible inventory
 
 ssm: ## Open a shell on the host via SSM
 	@$$($(call tf,compute,output -raw ssm_session_command))
+
+grafana: ## Port-forward Grafana to http://localhost:3000 over SSM (Ctrl-C to stop)
+	@$$($(call tf,compute,output -raw ssm_session_command)) --document-name AWS-StartPortForwardingSession --parameters portNumber=3000,localPortNumber=3000
+
+vmui: ## Port-forward the VictoriaMetrics UI to http://localhost:8428/vmui over SSM
+	@$$($(call tf,compute,output -raw ssm_session_command)) --document-name AWS-StartPortForwardingSession --parameters portNumber=8428,localPortNumber=8428
 
 $(VENV)/.installed: $(ANSIBLE_DIR)/requirements.txt
 	python3 -m venv $(VENV)

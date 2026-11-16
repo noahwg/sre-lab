@@ -11,3 +11,5 @@
       tags: [edge]
     - role: app
       tags: [app]
+    - role: monitoring
+      tags: [monitoring]
