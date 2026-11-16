@@ -117,6 +117,36 @@ resource "aws_iam_role_policy" "ecr_pull" {
   policy = data.aws_iam_policy_document.ecr_pull.json
 }
 
+# Read-only CloudWatch metrics, for Grafana's CloudWatch datasource (CPU credit balance
+# and surplus credits, which only CloudWatch can see). Containers reach these
+# credentials through the instance metadata service (hop limit 2 below). These actions
+# do not support resource-level restrictions, hence "*".
+data "aws_iam_policy_document" "cloudwatch_read" {
+  statement {
+    actions = [
+      "cloudwatch:GetMetricData",
+      "cloudwatch:GetMetricStatistics",
+      "cloudwatch:ListMetrics",
+    ]
+    resources = ["*"]
+  }
+  # Lets the datasource's dropdowns list instances and regions.
+  statement {
+    actions = [
+      "ec2:DescribeInstances",
+      "ec2:DescribeRegions",
+      "ec2:DescribeTags",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "cloudwatch_read" {
+  name   = "cloudwatch-read"
+  role   = aws_iam_role.host.id
+  policy = data.aws_iam_policy_document.cloudwatch_read.json
+}
+
 # ---------------------------------------------------------------------------
 # Instance
 # ---------------------------------------------------------------------------
@@ -147,8 +177,14 @@ resource "aws_instance" "host" {
   tags = { Name = var.name }
 
   lifecycle {
-    # Don't replace the host (and re-provision it) every time a new AMI ships.
-    ignore_changes = [ami]
+    ignore_changes = [
+      # Don't replace the host (and re-provision it) every time a new AMI ships.
+      ami,
+      # Launched without an auto-assigned public IP and reached through the Elastic IP,
+      # but once the EIP is attached the provider reads this back as true. Without this,
+      # every plan wants to replace the instance, and its data with it.
+      associate_public_ip_address,
+    ]
   }
 }
 
