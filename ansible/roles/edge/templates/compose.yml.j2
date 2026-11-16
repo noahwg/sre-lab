@@ -10,7 +10,9 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - {{ edge_dir }}/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Mount the directory, not the file: Ansible replaces the Caddyfile by rename, which a
+      # single-file bind mount would never see (reload would re-read the old content).
+      - {{ edge_dir }}:/etc/caddy:ro
       - {{ edge_data_dir }}:/data
       - caddy_config:/config
     networks:

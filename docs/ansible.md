@@ -83,10 +83,10 @@ Metrics and dashboards, in Docker from `/opt/monitoring`, with data on the telem
 | `grafana` | 192 MB | Dashboards, provisioned from files in the repo |
 
 - **Scrape targets** (every 15 s, over the shared Docker networks): VictoriaMetrics itself, node-exporter, the app's `/metrics`, and Caddy. Caddy serves its metrics on `http://caddy:9180/metrics`, a listener that is not published, so only containers on the `edge` network can reach it. The public `/metrics` still returns 404. The list is `monitoring_scrape_targets` in the role defaults.
-- **Private by default.** Nothing is public. VictoriaMetrics and Grafana are published on the host's **loopback only**; you reach them with an SSM port-forward:
+- **Exposure.** Grafana is public at `https://grafana.<primary domain>` (an `edge_sites` entry in `group_vars/all.yml`; Caddy proxies to `grafana:3000` and gets its own certificate), protected only by Grafana's login (sign-up and anonymous access are off). This is a deliberate lab trade-off; remove that entry to make it private again. VictoriaMetrics is **never** public. Both are also published on the host's loopback, reachable with an SSM port-forward:
 
   ```sh
-  make grafana      # http://localhost:3000   user: admin, password: /sre-lab/monitoring/grafana_admin_password
+  make grafana      # http://localhost:3000 (optional now that it is public)   user: admin, password: /sre-lab/monitoring/grafana_admin_password
   make vmui         # http://localhost:8428/vmui   (query and explore raw metrics)
   ```
 
