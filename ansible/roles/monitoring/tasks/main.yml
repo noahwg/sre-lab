@@ -1,0 +1,150 @@
+---
+# Read on the machine running Ansible, with your AWS credentials.
+- name: Read the Grafana admin password from SSM Parameter Store
+  ansible.builtin.set_fact:
+    monitoring_grafana_password: "{{ lookup('amazon.aws.ssm_parameter', monitoring_grafana_password_parameter, region=ansible_aws_ssm_region, decrypt=true) }}"
+  no_log: true
+
+- name: Refuse a missing or placeholder Grafana password
+  ansible.builtin.assert:
+    that:
+      - monitoring_grafana_password != monitoring_password_placeholder
+      - monitoring_grafana_password | length >= monitoring_password_min_length
+      - monitoring_grafana_password is match('^[A-Za-z0-9]+$')
+    fail_msg: >-
+      {{ monitoring_grafana_password_parameter }} is still the placeholder, shorter than
+      {{ monitoring_password_min_length }} characters, or not alphanumeric
+      (generate with: openssl rand -hex 24).
+    quiet: true
+  no_log: true
+
+# The volume mounts with `nofail`, so a missing volume would otherwise leave us quietly
+# writing metrics onto the root disk.
+- name: Check the telemetry volume is mounted
+  ansible.builtin.command: mountpoint -q {{ telemetry_mount_point }}
+  changed_when: false
+
+- name: Create the monitoring directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.owner | default('root') }}"
+    mode: "0755"
+  loop:
+    - { path: "{{ monitoring_dir }}" }
+    - { path: "{{ monitoring_dir }}/provisioning" }
+    - { path: "{{ monitoring_dir }}/provisioning/datasources" }
+    - { path: "{{ monitoring_dir }}/provisioning/dashboards" }
+    - { path: "{{ monitoring_dir }}/dashboards" }
+    - { path: "{{ monitoring_data_dir }}" }
+    - { path: "{{ monitoring_data_dir }}/victoriametrics" }
+    - { path: "{{ monitoring_data_dir }}/grafana", owner: "{{ monitoring_grafana_uid }}" }
+
+- name: Render the scrape config
+  ansible.builtin.template:
+    src: scrape.yml.j2
+    dest: "{{ monitoring_dir }}/scrape.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: reload scrape config
+
+- name: Render the Grafana datasources
+  ansible.builtin.template:
+    src: datasources.yml.j2
+    dest: "{{ monitoring_dir }}/provisioning/datasources/datasources.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart grafana
+
+- name: Install the dashboard provider
+  ansible.builtin.copy:
+    src: dashboards.yml
+    dest: "{{ monitoring_dir }}/provisioning/dashboards/dashboards.yml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart grafana
+
+# Grafana re-reads this directory every 30 seconds, so no restart is needed.
+- name: Install the dashboards
+  ansible.builtin.copy:
+    src: dashboards/
+    dest: "{{ monitoring_dir }}/dashboards/"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Write the Grafana environment file
+  ansible.builtin.template:
+    src: grafana.env.j2
+    dest: "{{ monitoring_dir }}/grafana.env"
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  register: monitoring_env
+
+- name: Render the compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ monitoring_dir }}/compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Start the monitoring stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_dir }}"
+    state: present
+    remove_orphans: true
+    # env_file changes don't alter the compose file, so force a recreate when it changed.
+    recreate: "{{ 'always' if monitoring_env is changed else 'auto' }}"
+  register: monitoring_compose
+
+- name: Wait for VictoriaMetrics
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_vm_port }}/health"
+    return_content: true
+  register: monitoring_vm_health
+  until: monitoring_vm_health.status == 200
+  retries: 12
+  delay: 5
+  changed_when: false
+
+- name: Wait for Grafana
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/health"
+  register: monitoring_grafana_health
+  until: monitoring_grafana_health.status == 200
+  retries: 18
+  delay: 5
+  changed_when: false
+
+# Every scrape target must be up: this catches a wrong container name, a network that
+# isn't shared, or an app that stopped serving /metrics.
+- name: Check every scrape target is up
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_vm_port }}/api/v1/query?query=sum(up)"
+    return_content: true
+  register: monitoring_up
+  until: >-
+    monitoring_up.json.data.result | length == 1
+    and (monitoring_up.json.data.result[0].value[1] | int) == (monitoring_scrape_targets | length)
+  retries: 18
+  delay: 5
+  changed_when: false
+
+- name: Check Grafana can reach VictoriaMetrics
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/datasources/uid/victoriametrics/health"
+    url_username: admin
+    url_password: "{{ monitoring_grafana_password }}"
+    force_basic_auth: true
+    return_content: true
+  register: monitoring_datasource
+  failed_when: monitoring_datasource.json.status | default('') != 'OK'
+  changed_when: false
+  no_log: true

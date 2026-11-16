@@ -1,0 +1,15 @@
+---
+# Config changes that don't alter the compose file need an explicit nudge.
+- name: Reload VictoriaMetrics scrape config
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_vm_port }}/-/reload"
+    method: POST
+    status_code: [200, 204]
+  when: not (monitoring_compose.changed | default(false))
+  listen: reload scrape config
+
+# Datasource provisioning is read at startup; dashboards reload by themselves.
+- name: Restart Grafana
+  ansible.builtin.command: docker restart grafana
+  when: not (monitoring_compose.changed | default(false))
+  listen: restart grafana

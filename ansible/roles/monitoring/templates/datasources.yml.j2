@@ -1,0 +1,22 @@
+# Managed by Ansible. Do not edit on the host.
+apiVersion: 1
+datasources:
+  - name: VictoriaMetrics
+    uid: victoriametrics
+    type: prometheus
+    access: proxy
+    url: http://victoriametrics:8428
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: {{ monitoring_scrape_interval }}
+  # Reads CPU credit metrics, which only CloudWatch can see. Credentials come from the
+  # instance role through the metadata service (see the compute module's cloudwatch-read policy).
+  - name: CloudWatch
+    uid: cloudwatch
+    type: cloudwatch
+    editable: false
+    jsonData:
+      authType: default
+      defaultRegion: {{ ansible_aws_ssm_region }}

@@ -14,11 +14,12 @@ ansible/
   roles/
     base/               telemetry volume, swap, system hygiene, Docker
     postgres/           Postgres 17 in Docker, private `db` network, runtime role
+    monitoring/         VictoriaMetrics, node_exporter, Grafana
     edge/               Caddy: TLS (Let's Encrypt) and reverse proxy
     app/                the shortener container, pulled from ECR
 ```
 
-More roles will be added in order: `monitoring` (VictoriaMetrics, VictoriaLogs, VictoriaTraces, Grafana).
+Still to come in `monitoring`: VictoriaLogs and a log shipper, VictoriaTraces, and a Postgres exporter (VictoriaMetrics, VictoriaLogs, VictoriaTraces, Grafana).
 
 ## Usage
 
@@ -71,6 +72,35 @@ make configure ANSIBLE_ARGS="--tags postgres"
 # on the host: sudo docker exec -it postgres psql -U shortener_owner -d shortener -c '\du'
 ```
 
+## Role: monitoring
+
+Metrics and dashboards, in Docker from `/opt/monitoring`, with data on the telemetry volume (`/var/lib/telemetry/monitoring`). Runs after `app`.
+
+| Container | Memory | What it does |
+|---|---|---|
+| `victoriametrics` | 160 MB | Stores metrics (30 days) and does the scraping itself, so there is no separate vmagent |
+| `node-exporter` | 32 MB | Host CPU, memory, disk and load, read through a read-only view of `/` |
+| `grafana` | 192 MB | Dashboards, provisioned from files in the repo |
+
+- **Scrape targets** (every 15 s, over the shared Docker networks): VictoriaMetrics itself, node-exporter, the app's `/metrics`, and Caddy. Caddy serves its metrics on `http://caddy:9180/metrics`, a listener that is not published, so only containers on the `edge` network can reach it. The public `/metrics` still returns 404. The list is `monitoring_scrape_targets` in the role defaults.
+- **Private by default.** Nothing is public. VictoriaMetrics and Grafana are published on the host's **loopback only**; you reach them with an SSM port-forward:
+
+  ```sh
+  make grafana      # http://localhost:3000   user: admin, password: /sre-lab/monitoring/grafana_admin_password
+  make vmui         # http://localhost:8428/vmui   (query and explore raw metrics)
+  ```
+
+- **CPU.** The Victoria containers are pinned to core 1 (`monitoring_cpuset`) with a low relative weight, so background merging can't starve Caddy and the app. Set `monitoring_cpuset: ""` to turn pinning off.
+- **Dashboards as code.** `roles/monitoring/files/dashboards/*.json` (Host and Shortener) are copied to the host and re-read by Grafana every 30 s, so editing a file and running `make configure ANSIBLE_ARGS="--tags monitoring"` is all it takes. Datasources are provisioned too: VictoriaMetrics (as a Prometheus datasource) and CloudWatch, which supplies the CPU credit panels (credentials come from the instance role).
+- **Password.** Read from SSM on your machine. Grafana only uses it when it first creates its database; rotate later with `docker exec grafana grafana cli admin reset-admin-password <new>`.
+- **Checks at the end of the run:** the telemetry volume must be mounted (otherwise metrics would silently land on the root disk), VictoriaMetrics and Grafana must answer, **every** scrape target must be up (`sum(up)` equals the number of targets), and Grafana must be able to query VictoriaMetrics.
+
+```sh
+make configure ANSIBLE_ARGS="--tags monitoring"
+# Caddy changed too (metrics listener), so on the first run also apply the edge role:
+make configure ANSIBLE_ARGS="--tags edge,monitoring"
+```
+
 ## Role: edge
 
 Runs Caddy in Docker from `/opt/edge` and gets a Let's Encrypt certificate for each site automatically (HTTP-01 over port 80, which the security group already allows). Certificates and the ACME account are stored in `/var/lib/caddy` on the root disk.
@@ -87,7 +117,7 @@ Notes:
 
 - **Prerequisite:** the DNS records from `make up` must already resolve to the host's Elastic IP, or issuance fails.
 - **Going to a real certificate:** once the staging run works, `make configure ANSIBLE_ARGS="--tags edge -e edge_acme_staging=false"`. To make it permanent, set the variable in `ansible/group_vars/all.yml`.
-- `/metrics` is answered with a 404 at the edge. Metrics are scraped on the internal Docker network.
+- `/metrics` is answered with a 404 at the edge. Metrics are scraped on the internal Docker network: Caddy's own metrics are on an unpublished `http://:9180` listener (see the monitoring role).
 - A Caddyfile-only change is applied with an in-place `caddy reload`, not a restart.
 - **Switching between staging and production:** Caddy keeps serving any valid certificate it already has, whichever CA issued it. The role therefore deletes certificates from the CA you are *not* using and restarts Caddy so it obtains a new one. Flipping back to staging removes the production certificate too, so do that only for testing.
 - The last task probes each site over HTTPS from the host (retrying while the certificate is issued) and fails the run if nothing answers.

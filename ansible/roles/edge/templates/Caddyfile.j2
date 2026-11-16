@@ -1,5 +1,9 @@
 # Managed by Ansible. Do not edit on the host.
 {
+	# Request metrics for the monitoring stack (served only on the internal :9180 below).
+	servers {
+		metrics
+	}
 {% if edge_acme_email %}
 	email {{ edge_acme_email }}
 {% endif %}
@@ -25,3 +29,9 @@
 {% endif %}
 }
 {% endfor %}
+
+# Prometheus metrics for the monitoring stack. Plain HTTP on a port that is not published
+# in the compose file, so it is reachable only from containers on the shared Docker network.
+http://:9180 {
+	metrics /metrics
+}

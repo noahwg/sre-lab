@@ -1,0 +1,11 @@
+# Managed by Ansible. Dashboards are JSON files in the repo, loaded from this directory.
+apiVersion: 1
+providers:
+  - name: sre-lab
+    folder: sre-lab
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana-dashboards

@@ -1,0 +1,48 @@
+---
+monitoring_dir: /opt/monitoring
+
+# Pinned images (arm64). Bump deliberately.
+monitoring_vm_image: victoriametrics/victoria-metrics:v1.156.0
+monitoring_grafana_image: grafana/grafana:13.2.6
+monitoring_node_exporter_image: prom/node-exporter:v1.12.1
+
+# Data lives on the telemetry volume (telemetry_mount_point comes from the inventory).
+monitoring_data_dir: "{{ telemetry_mount_point }}/monitoring"
+monitoring_grafana_uid: 472
+
+# Retention. `d` = days; a bare number means months.
+monitoring_metrics_retention: 30d
+monitoring_scrape_interval: 15s
+
+# The host has 2 cores. The Victoria containers are confined to one so their
+# background merges can't starve Caddy or the app; set to "" to disable pinning.
+monitoring_cpuset: "1"
+# Relative CPU weight under contention (Caddy and the app use 1024).
+monitoring_cpu_shares: 256
+
+monitoring_vm_memory_limit: 160m
+monitoring_grafana_memory_limit: 192m
+monitoring_node_exporter_memory_limit: 32m
+
+# Ports are published on the host's loopback only, for SSM port-forwarding:
+#   VictoriaMetrics UI  127.0.0.1:8428/vmui      Grafana  127.0.0.1:3000
+monitoring_vm_port: 8428
+monitoring_grafana_port: 3000
+
+# Docker networks. `mon` is created here; `edge` (Caddy and the app) by the edge role.
+monitoring_network: mon
+monitoring_edge_network: "{{ edge_network | default('edge') }}"
+
+# Grafana admin password, from SSM on the machine running Ansible (secrets stack).
+monitoring_project: sre-lab
+monitoring_grafana_password_parameter: "/{{ monitoring_project }}/monitoring/grafana_admin_password"
+monitoring_password_min_length: 16
+monitoring_password_placeholder: REPLACE_ME
+
+# What VictoriaMetrics scrapes (container name : port, on the shared Docker networks).
+# Later roles append to this list.
+monitoring_scrape_targets:
+  - { job: victoriametrics, target: "victoriametrics:8428" }
+  - { job: node, target: "node-exporter:9100" }
+  - { job: shortener, target: "shortener:8080" }
+  - { job: caddy, target: "caddy:9180" }

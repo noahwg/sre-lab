@@ -1,0 +1,86 @@
+# Managed by Ansible. Do not edit on the host.
+name: monitoring
+
+services:
+  victoriametrics:
+    image: {{ monitoring_vm_image }}
+    container_name: victoriametrics
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod={{ monitoring_metrics_retention }}
+      - -httpListenAddr=:8428
+      - -promscrape.config=/etc/victoriametrics/scrape.yml
+      - -promscrape.config.strictParse
+      - -memory.allowedPercent=60
+    ports:
+      - "127.0.0.1:{{ monitoring_vm_port }}:8428"
+    volumes:
+      - {{ monitoring_data_dir }}/victoriametrics:/storage
+      - {{ monitoring_dir }}/scrape.yml:/etc/victoriametrics/scrape.yml:ro
+    networks:
+      - {{ monitoring_network }}
+      - {{ monitoring_edge_network }}
+    mem_limit: {{ monitoring_vm_memory_limit }}
+    cpu_shares: {{ monitoring_cpu_shares }}
+{% if monitoring_cpuset %}
+    cpuset: "{{ monitoring_cpuset }}"
+{% endif %}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  node-exporter:
+    image: {{ monitoring_node_exporter_image }}
+    container_name: node-exporter
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.filesystem.fs-types-exclude=^(tmpfs|devtmpfs|overlay|squashfs|nsfs|proc|sysfs|cgroup2?|autofs|devpts|mqueue|fuse.*)$$
+    # Host process namespace and a read-only view of / so it reports the host, not itself.
+    pid: host
+    volumes:
+      - /:/host:ro
+    networks:
+      - {{ monitoring_network }}
+    mem_limit: {{ monitoring_node_exporter_memory_limit }}
+    cpu_shares: {{ monitoring_cpu_shares }}
+{% if monitoring_cpuset %}
+    cpuset: "{{ monitoring_cpuset }}"
+{% endif %}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  grafana:
+    image: {{ monitoring_grafana_image }}
+    container_name: grafana
+    restart: unless-stopped
+    env_file:
+      - {{ monitoring_dir }}/grafana.env
+    ports:
+      - "127.0.0.1:{{ monitoring_grafana_port }}:3000"
+    volumes:
+      - {{ monitoring_data_dir }}/grafana:/var/lib/grafana
+      - {{ monitoring_dir }}/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - {{ monitoring_dir }}/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - {{ monitoring_dir }}/dashboards:/var/lib/grafana-dashboards:ro
+    networks:
+      - {{ monitoring_network }}
+    mem_limit: {{ monitoring_grafana_memory_limit }}
+    cpu_shares: {{ monitoring_cpu_shares }}
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  {{ monitoring_network }}:
+    name: {{ monitoring_network }}
+  {{ monitoring_edge_network }}:
+    name: {{ monitoring_edge_network }}
+    external: true
