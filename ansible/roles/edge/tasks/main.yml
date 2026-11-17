@@ -71,7 +71,9 @@
   loop_control:
     label: "{{ item.host }}"
   register: edge_probe
-  until: edge_probe.stdout in ['200', '404', '502']
+  # Any HTTP status proves DNS, the port and TLS work (Grafana answers / with a 302 to
+  # its login). curl prints 000 when the connection or handshake failed.
+  until: edge_probe.stdout not in ['', '000']
   retries: 12
   delay: 5
   changed_when: false
