@@ -22,7 +22,8 @@ async fn main() -> ExitCode {
         return healthcheck().await;
     }
 
-    telemetry::init_logging();
+    // Held until main returns so buffered spans are flushed on the way out.
+    let _telemetry = telemetry::init_logging();
 
     if std::env::args().nth(1).as_deref() == Some("migrate") {
         return migrate().await;
