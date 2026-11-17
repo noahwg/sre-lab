@@ -40,6 +40,7 @@
     - { path: "{{ monitoring_data_dir }}" }
     - { path: "{{ monitoring_data_dir }}/victoriametrics" }
     - { path: "{{ monitoring_data_dir }}/victorialogs" }
+    - { path: "{{ monitoring_data_dir }}/victoriatraces" }
     - { path: "{{ monitoring_data_dir }}/fluent-bit" }
     - { path: "{{ monitoring_dir }}/fluent-bit" }
     - { path: "{{ monitoring_data_dir }}/grafana", owner: "{{ monitoring_grafana_uid }}" }
@@ -158,6 +159,15 @@
   delay: 5
   changed_when: false
 
+- name: Wait for VictoriaTraces
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_victoriatraces_port }}/health"
+  register: monitoring_vt_health
+  until: monitoring_vt_health.status == 200
+  retries: 12
+  delay: 5
+  changed_when: false
+
 - name: Wait for Grafana
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/health"
@@ -219,5 +229,17 @@
     return_content: true
   register: monitoring_logs_datasource
   failed_when: monitoring_logs_datasource.json.status | default('') != 'OK'
+  changed_when: false
+  no_log: true
+
+- name: Check Grafana can reach VictoriaTraces
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/datasources/uid/victoriatraces/health"
+    url_username: admin
+    url_password: "{{ monitoring_grafana_password }}"
+    force_basic_auth: true
+    return_content: true
+  register: monitoring_traces_datasource
+  failed_when: monitoring_traces_datasource.json.status | default('') != 'OK'
   changed_when: false
   no_log: true
