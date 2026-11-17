@@ -11,7 +11,7 @@ use sqlx::{
     Row,
 };
 use tokio::{sync::Semaphore, time::timeout};
-use tracing::{error, warn};
+use tracing::{error, field::Empty, info_span, warn, Instrument, Span};
 
 use crate::store::{Link, LinkStore, StoreError};
 
@@ -45,12 +45,15 @@ impl PgStore {
 
 fn unavailable(op: &str, e: sqlx::Error) -> StoreError {
     error!(op, error = %e, "database error");
+    // Mark the surrounding db.* span as failed in the trace.
+    Span::current().record("otel.status_code", "ERROR");
     counter!("store_errors_total", "op" => op.to_owned()).increment(1);
     StoreError::Unavailable
 }
 
 #[async_trait]
 impl LinkStore for PgStore {
+    #[tracing::instrument(name = "db.insert", skip_all, fields(db.system = "postgresql", db.operation.name = "INSERT", link.code = %link.code, otel.status_code = Empty))]
     async fn insert(&self, link: Link) -> Result<(), StoreError> {
         sqlx::query(
             "INSERT INTO links (code, url, created_at, expires_at, clicks) VALUES ($1, $2, $3, $4, $5)",
@@ -71,6 +74,7 @@ impl LinkStore for PgStore {
         })
     }
 
+    #[tracing::instrument(name = "db.get", skip(self), fields(db.system = "postgresql", db.operation.name = "SELECT", link.code = %code, otel.status_code = Empty))]
     async fn get(&self, code: &str) -> Result<Option<Link>, StoreError> {
         let row = sqlx::query(
             "SELECT code, url, created_at, expires_at, clicks FROM links WHERE code = $1",
@@ -101,19 +105,32 @@ impl LinkStore for PgStore {
         };
         let pool = self.pool.clone();
         let code = code.to_owned();
-        tokio::spawn(async move {
-            let _permit = permit;
-            if let Err(e) = sqlx::query("UPDATE links SET clicks = clicks + 1 WHERE code = $1")
-                .bind(&code)
-                .execute(&pool)
-                .await
-            {
-                counter!("link_hits_failed_total").increment(1);
-                warn!(error = %e, "could not record click");
+        // A child of the request span that may outlive it (the redirect doesn't wait for it).
+        let span = info_span!(
+            "db.record_hit",
+            db.system = "postgresql",
+            db.operation.name = "UPDATE",
+            link.code = %code,
+            otel.status_code = Empty,
+        );
+        tokio::spawn(
+            async move {
+                let _permit = permit;
+                if let Err(e) = sqlx::query("UPDATE links SET clicks = clicks + 1 WHERE code = $1")
+                    .bind(&code)
+                    .execute(&pool)
+                    .await
+                {
+                    counter!("link_hits_failed_total").increment(1);
+                    Span::current().record("otel.status_code", "ERROR");
+                    warn!(error = %e, "could not record click");
+                }
             }
-        });
+            .instrument(span),
+        );
     }
 
+    #[tracing::instrument(name = "db.delete", skip(self), fields(db.system = "postgresql", db.operation.name = "DELETE", link.code = %code, otel.status_code = Empty))]
     async fn delete(&self, code: &str) -> Result<bool, StoreError> {
         sqlx::query("DELETE FROM links WHERE code = $1")
             .bind(code)

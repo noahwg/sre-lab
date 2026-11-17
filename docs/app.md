@@ -1,6 +1,6 @@
 # The application
 
-A URL shortener written in Rust (`axum` + `tokio`). It lives in `app/` and builds to a ~10 MB arm64 image. Links are stored in Postgres, behind a `LinkStore` trait. An in-memory implementation is used when `DATABASE_URL` is unset (tests and quick local runs), in which case links disappear on restart.
+A URL shortener written in Rust (`axum` + `tokio`). It lives in `app/` and builds to a ~55 MB arm64 image. Links are stored in Postgres, behind a `LinkStore` trait. An in-memory implementation is used when `DATABASE_URL` is unset (tests and quick local runs), in which case links disappear on restart.
 
 ## Endpoints
 
@@ -34,6 +34,8 @@ The API key goes in the `x-api-key` header.
 | `BASE_URL` | `http://localhost:8080` | Used to build `short_url` |
 | `BIND_ADDR` | `0.0.0.0:8080` | |
 | `LOG_FORMAT` | text | `json` for structured logs |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Base URL of an OTLP/HTTP collector, e.g. `http://victoriatraces:10428/insert/opentelemetry` (`/v1/traces` is appended). Unset means tracing is off |
+| `OTEL_TRACES_SAMPLER_ARG` | `1.0` | Fraction of new traces to keep (0 to 1) |
 | `RUST_LOG` | `info` | |
 
 ## Develop
@@ -57,7 +59,18 @@ The runtime image is distroless (no shell or curl), so the container healthcheck
 
 ## Not done yet
 
-OTLP trace export, rate limiting, and an expiry cleanup job.
+Rate limiting and an expiry cleanup job.
+
+## Tracing
+
+With `OTEL_EXPORTER_OTLP_ENDPOINT` set, the app exports OpenTelemetry traces over OTLP/HTTP (protobuf). Without it, nothing is exported and there is no overhead beyond the normal `tracing` spans.
+
+- **Spans.** One server span per API or redirect request, named by route template (`GET /{code}`, `POST /api/links`; never the raw path), with `http.request.method`, `http.route` and `http.response.status_code`. Each Postgres call is a child span (`db.insert`, `db.get`, `db.delete`) and so is the background click update (`db.record_hit`, which can outlive the request). 5xx responses and database errors are marked as errors (`error=true` in Jaeger/Grafana).
+- **Not traced:** `/healthz`, `/readyz` and `/metrics`. They are polled constantly (container healthcheck, Prometheus) and would only add noise.
+- **Never in the way.** Spans are batched and sent from a background thread; if the collector is slow or down they are dropped, and requests are unaffected.
+- **Sampling.** Head-based: `OTEL_TRACES_SAMPLER_ARG` keeps that fraction of new traces (default all of them, which is fine at lab traffic). The decision is made when a request starts, so "keep every error" is not possible without a tail-sampling collector; lower the fraction if volume grows.
+- **Logs.** The request span carries `trace_id`, so with `LOG_FORMAT=json` log lines emitted while handling a request include it (`span.trace_id`, or inside `spans` for lines logged from a database span).
+- **Resource.** `service.name` is `shortener`.
 
 ## Database migrations
 

@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use axum::{
     extract::{MatchedPath, Path, Request, State},
@@ -10,9 +13,12 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use metrics::{counter, histogram};
+use opentelemetry::trace::TraceContextExt as _;
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
+use tracing::{field::Empty, info_span, Span};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::{
     codes,
@@ -37,20 +43,67 @@ pub fn router(state: AppState) -> Router {
         .route("/api/links/{code}", get(link_details).delete(delete_link))
         .route_layer(middleware::from_fn_with_state(state.clone(), require_api_key));
 
-    // Public: the redirect itself and operational endpoints.
-    let public = Router::new()
+    // The traffic worth tracing: the API and the redirect itself. A route layer (not `.layer`)
+    // so the matched route template is known when the span is created.
+    let traced = Router::new()
+        .merge(api)
+        .route("/{code}", get(redirect))
+        .route_layer(
+            TraceLayer::new_for_http()
+                .make_span_with(request_span)
+                .on_response(record_response),
+        );
+
+    // Operational endpoints are polled constantly (healthcheck, Prometheus), so they are
+    // not traced: it would only add noise and storage.
+    let ops = Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .route("/metrics", get(metrics_endpoint))
-        .route("/{code}", get(redirect));
+        .route("/metrics", get(metrics_endpoint));
 
     Router::new()
-        .merge(api)
-        .merge(public)
+        .merge(traced)
+        .merge(ops)
         // route_layer so MatchedPath is available and metric labels stay low-cardinality.
         .route_layer(middleware::from_fn(track_metrics))
-        .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// One server span per traced request, named by method and route template
+/// (`GET /{code}`, never the raw path), following the OTel HTTP semantic conventions.
+fn request_span<B>(req: &Request<B>) -> Span {
+    let method = req.method().as_str();
+    let route = req
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|p| p.as_str())
+        .unwrap_or("unmatched");
+    let span = info_span!(
+        "request",
+        otel.name = %format!("{method} {route}"),
+        otel.kind = "server",
+        http.request.method = %method,
+        http.route = %route,
+        http.response.status_code = Empty,
+        otel.status_code = Empty,
+        trace_id = Empty,
+    );
+
+    // Put the trace ID on the span so it appears in this request's JSON log lines
+    // (as `span.trace_id`), which lets you jump from a log line to its trace.
+    let trace_id = span.context().span().span_context().trace_id();
+    if trace_id != opentelemetry::trace::TraceId::INVALID {
+        span.record("trace_id", trace_id.to_string());
+    }
+    span
+}
+
+fn record_response<B>(res: &Response<B>, _latency: Duration, span: &Span) {
+    let status = res.status();
+    span.record("http.response.status_code", status.as_u16());
+    if status.is_server_error() {
+        span.record("otel.status_code", "ERROR");
+    }
 }
 
 // ---------- middleware ----------
