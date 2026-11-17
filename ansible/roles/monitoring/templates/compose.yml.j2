@@ -71,6 +71,7 @@ services:
       - {{ monitoring_dir }}/dashboards:/var/lib/grafana-dashboards:ro
     networks:
       - {{ monitoring_network }}
+      - {{ monitoring_edge_network }}
     mem_limit: {{ monitoring_grafana_memory_limit }}
     cpu_shares: {{ monitoring_cpu_shares }}
     cap_drop:

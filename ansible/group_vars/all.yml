@@ -11,3 +11,5 @@ edge_acme_staging: false
 edge_sites:
   - host: "{{ primary_fqdn }}"
     upstream: "shortener:8080"
+  - host: "{{ fqdns['grafana.lab'] }}"
+    upstream: "grafana:3000"
