@@ -17,6 +17,13 @@ datasources:
     access: proxy
     url: http://victorialogs:9428
     editable: false
+  # Traces: VictoriaTraces speaks the Jaeger query API, which Grafana supports natively.
+  - name: VictoriaTraces
+    uid: victoriatraces
+    type: jaeger
+    access: proxy
+    url: http://victoriatraces:10428/select/jaeger
+    editable: false
   # Reads CPU credit metrics, which only CloudWatch can see. Credentials come from the
   # instance role through the metadata service (see the compute module's cloudwatch-read policy).
   - name: CloudWatch

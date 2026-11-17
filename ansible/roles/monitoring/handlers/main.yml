@@ -1,20 +1,28 @@
 ---
-# Config changes that don't alter the compose file need an explicit nudge.
+# These run right after the compose project is started (see `flush_handlers` in tasks).
+# They are unconditional on purpose: "the compose project changed" does not mean *this*
+# container was recreated (adding a new service changes the project but leaves the others
+# running), so skipping them left VictoriaMetrics, Grafana or Fluent Bit on stale config.
+# A redundant reload/restart right after a fresh start is harmless.
+
+# VictoriaMetrics reads the scrape config at startup; reload it in place. It may still be
+# starting, hence the retries.
 - name: Reload VictoriaMetrics scrape config
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ monitoring_vm_port }}/-/reload"
     method: POST
     status_code: [200, 204]
-  when: not (monitoring_compose.changed | default(false))
+  register: monitoring_reload
+  until: monitoring_reload.status in [200, 204]
+  retries: 12
+  delay: 5
   listen: reload scrape config
 
 # Datasource provisioning is read at startup; dashboards reload by themselves.
 - name: Restart Grafana
   ansible.builtin.command: docker restart grafana
-  when: not (monitoring_compose.changed | default(false))
   listen: restart grafana
 
 - name: Restart Fluent Bit
   ansible.builtin.command: docker restart fluent-bit
-  when: not (monitoring_compose.changed | default(false))
   listen: restart fluent bit

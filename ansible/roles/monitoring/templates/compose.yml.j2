@@ -24,7 +24,9 @@ services:
       - "127.0.0.1:{{ monitoring_vm_port }}:8428"
     volumes:
       - {{ monitoring_data_dir }}/victoriametrics:/storage
-      - {{ monitoring_dir }}/scrape.yml:/etc/victoriametrics/scrape.yml:ro
+      # Mount the directory, not the file: Ansible replaces scrape.yml by rename, which a
+      # single-file bind mount would never see (reloads would re-read the old content).
+      - {{ monitoring_dir }}/victoriametrics:/etc/victoriametrics:ro
     networks:
       - {{ monitoring_network }}
       - {{ monitoring_edge_network }}
@@ -123,6 +125,41 @@ services:
     networks:
       - {{ monitoring_network }}
     mem_limit: {{ monitoring_victorialogs_memory_limit }}
+    cpu_shares: {{ monitoring_cpu_shares }}
+{% if monitoring_cpuset %}
+    cpuset: "{{ monitoring_cpuset }}"
+{% endif %}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  victoriatraces:
+    image: {{ monitoring_victoriatraces_image }}
+    container_name: victoriatraces
+    restart: unless-stopped
+    # Adds the compose service name to each log line (Fluent Bit uses it as the source).
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ docker_log_max_size | default('10m') }}"
+        max-file: "{{ docker_log_max_file | default('3') }}"
+        labels: "com.docker.compose.service"
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod={{ monitoring_traces_retention }}
+      - -retention.maxDiskSpaceUsageBytes={{ monitoring_traces_max_disk }}
+      - -httpListenAddr=:10428
+      - -memory.allowedPercent=60
+    ports:
+      - "127.0.0.1:{{ monitoring_victoriatraces_port }}:10428"
+    volumes:
+      - {{ monitoring_data_dir }}/victoriatraces:/storage
+    networks:
+      - {{ monitoring_network }}
+      - {{ monitoring_edge_network }}
+    mem_limit: {{ monitoring_victoriatraces_memory_limit }}
     cpu_shares: {{ monitoring_cpu_shares }}
 {% if monitoring_cpuset %}
     cpuset: "{{ monitoring_cpuset }}"

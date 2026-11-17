@@ -40,18 +40,26 @@
     - { path: "{{ monitoring_data_dir }}" }
     - { path: "{{ monitoring_data_dir }}/victoriametrics" }
     - { path: "{{ monitoring_data_dir }}/victorialogs" }
+    - { path: "{{ monitoring_data_dir }}/victoriatraces" }
     - { path: "{{ monitoring_data_dir }}/fluent-bit" }
     - { path: "{{ monitoring_dir }}/fluent-bit" }
+    - { path: "{{ monitoring_dir }}/victoriametrics" }
     - { path: "{{ monitoring_data_dir }}/grafana", owner: "{{ monitoring_grafana_uid }}" }
 
 - name: Render the scrape config
   ansible.builtin.template:
     src: scrape.yml.j2
-    dest: "{{ monitoring_dir }}/scrape.yml"
+    dest: "{{ monitoring_dir }}/victoriametrics/scrape.yml"
     owner: root
     group: root
     mode: "0644"
   notify: reload scrape config
+
+# The scrape config used to live directly in monitoring_dir (mounted as a single file).
+- name: Remove the old scrape config location
+  ansible.builtin.file:
+    path: "{{ monitoring_dir }}/scrape.yml"
+    state: absent
 
 - name: Render the Fluent Bit config
   ansible.builtin.template:
@@ -139,6 +147,11 @@
     recreate: "{{ 'always' if monitoring_env is changed else 'auto' }}"
   register: monitoring_compose
 
+# Apply pending config changes (scrape targets, datasources, Fluent Bit config) now, before the
+# checks below, which would otherwise run against the old config.
+- name: Apply config changes
+  ansible.builtin.meta: flush_handlers
+
 - name: Wait for VictoriaMetrics
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ monitoring_vm_port }}/health"
@@ -154,6 +167,15 @@
     url: "http://127.0.0.1:{{ monitoring_victorialogs_port }}/health"
   register: monitoring_vl_health
   until: monitoring_vl_health.status == 200
+  retries: 12
+  delay: 5
+  changed_when: false
+
+- name: Wait for VictoriaTraces
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_victoriatraces_port }}/health"
+  register: monitoring_vt_health
+  until: monitoring_vt_health.status == 200
   retries: 12
   delay: 5
   changed_when: false
@@ -219,5 +241,17 @@
     return_content: true
   register: monitoring_logs_datasource
   failed_when: monitoring_logs_datasource.json.status | default('') != 'OK'
+  changed_when: false
+  no_log: true
+
+- name: Check Grafana can reach VictoriaTraces
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/datasources/uid/victoriatraces/health"
+    url_username: admin
+    url_password: "{{ monitoring_grafana_password }}"
+    force_basic_auth: true
+    return_content: true
+  register: monitoring_traces_datasource
+  failed_when: monitoring_traces_datasource.json.status | default('') != 'OK'
   changed_when: false
   no_log: true

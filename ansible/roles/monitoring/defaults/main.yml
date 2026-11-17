@@ -7,6 +7,7 @@ monitoring_grafana_image: grafana/grafana:13.2.6
 monitoring_node_exporter_image: prom/node-exporter:v1.12.1
 monitoring_victorialogs_image: victoriametrics/victoria-logs:v1.53.0
 monitoring_fluent_bit_image: fluent/fluent-bit:5.1.5
+monitoring_victoriatraces_image: victoriametrics/victoria-traces:v0.12.1
 # Grafana plugin for the VictoriaLogs datasource (installed at Grafana start).
 monitoring_victorialogs_plugin_version: 0.33.1
 
@@ -18,6 +19,9 @@ monitoring_grafana_uid: 472
 monitoring_metrics_retention: 30d
 monitoring_scrape_interval: 15s
 monitoring_logs_retention: 14d
+monitoring_traces_retention: 7d
+# Hard cap on trace storage, so a burst of traffic can't fill the telemetry volume.
+monitoring_traces_max_disk: 2GiB
 
 # The host has 2 cores. The Victoria containers are confined to one so their
 # background merges can't starve Caddy or the app; set to "" to disable pinning.
@@ -30,12 +34,15 @@ monitoring_grafana_memory_limit: 192m
 monitoring_node_exporter_memory_limit: 32m
 monitoring_victorialogs_memory_limit: 128m
 monitoring_fluent_bit_memory_limit: 48m
+monitoring_victoriatraces_memory_limit: 128m
 
 # Ports are published on the host's loopback only, for SSM port-forwarding:
 #   VictoriaMetrics UI  127.0.0.1:8428/vmui      Grafana  127.0.0.1:3000
 monitoring_vm_port: 8428
 monitoring_grafana_port: 3000
 monitoring_victorialogs_port: 9428
+# OTLP/HTTP ingest (/insert/opentelemetry/v1/traces) and the Jaeger query API (/select/jaeger).
+monitoring_victoriatraces_port: 10428
 
 # Docker networks. `mon` is created here; `edge` (Caddy and the app) by the edge role.
 monitoring_network: mon
@@ -55,4 +62,5 @@ monitoring_scrape_targets:
   - { job: shortener, target: "shortener:8080" }
   - { job: caddy, target: "caddy:9180" }
   - { job: victorialogs, target: "victorialogs:9428" }
+  - { job: victoriatraces, target: "victoriatraces:10428" }
   - { job: fluent-bit, target: "fluent-bit:2020", path: /api/v2/metrics/prometheus }
