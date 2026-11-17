@@ -1,0 +1,52 @@
+# Managed by Ansible. Do not edit on the host.
+[SERVICE]
+    Flush        2
+    Log_Level    warn
+    Parsers_File /fluent-bit/etc/parsers.conf
+    HTTP_Server  On
+    HTTP_Listen  0.0.0.0
+    HTTP_Port    2020
+
+# Docker's json-file logs: one file per container, named by container ID.
+[INPUT]
+    Name             tail
+    Path             /var/lib/docker/containers/*/*-json.log
+    Parser           docker
+    DB               /state/tail.db
+    Mem_Buf_Limit    10MB
+    Skip_Long_Lines  On
+    Read_from_Head   On
+    Refresh_Interval 10
+
+# Name the source after its compose service and flatten the label.
+[FILTER]
+    Name   lua
+    Match  *
+    script /fluent-bit/etc/service.lua
+    call   add_service
+
+# Don't ship our own logs back in (an error here would otherwise feed itself).
+[FILTER]
+    Name    grep
+    Match   *
+    Exclude service ^fluent-bit$
+
+# App and Caddy log JSON: lift its fields to the top level so they are queryable.
+[FILTER]
+    Name         parser
+    Match        *
+    Key_Name     log
+    Parser       json
+    Reserve_Data On
+    Preserve_Key Off
+
+[OUTPUT]
+    Name         http
+    Match        *
+    Host         victorialogs
+    Port         9428
+    URI          /insert/jsonline?_stream_fields=service&_msg_field=fields.message,message,msg,log&_time_field=date
+    Format       json_lines
+    Json_date_key date
+    Json_date_format iso8601
+    Retry_Limit  5

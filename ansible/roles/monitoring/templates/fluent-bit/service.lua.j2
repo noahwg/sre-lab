@@ -1,0 +1,11 @@
+-- Managed by Ansible. Do not edit on the host.
+-- Docker adds the labels we asked for under "attrs"; hoist the service name.
+function add_service(tag, timestamp, record)
+  local svc = "unknown"
+  if record["attrs"] ~= nil and record["attrs"]["com.docker.compose.service"] ~= nil then
+    svc = record["attrs"]["com.docker.compose.service"]
+  end
+  record["service"] = svc
+  record["attrs"] = nil
+  return 1, timestamp, record
+end

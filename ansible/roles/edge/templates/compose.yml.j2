@@ -5,12 +5,21 @@ services:
   caddy:
     image: {{ edge_caddy_image }}
     container_name: caddy
+    # Adds the compose service name to each log line (Fluent Bit uses it as the source).
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ docker_log_max_size | default('10m') }}"
+        max-file: "{{ docker_log_max_file | default('3') }}"
+        labels: "com.docker.compose.service"
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - {{ edge_dir }}/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Mount the directory, not the file: Ansible replaces the Caddyfile by rename, which a
+      # single-file bind mount would never see (reload would re-read the old content).
+      - {{ edge_dir }}:/etc/caddy:ro
       - {{ edge_data_dir }}:/data
       - caddy_config:/config
     networks:

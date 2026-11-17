@@ -895,12 +895,12 @@
           "namespace": "AWS/EC2",
           "metricName": "CPUCreditBalance",
           "dimensions": {
-            "InstanceId": "*"
+            "InstanceId": "__INSTANCE_ID__"
           },
           "statistic": "Average",
           "period": "300",
           "region": "default",
-          "matchExact": false,
+          "matchExact": true,
           "id": "",
           "expression": "",
           "label": "{{InstanceId}}"
@@ -954,12 +954,12 @@
           "namespace": "AWS/EC2",
           "metricName": "CPUSurplusCreditBalance",
           "dimensions": {
-            "InstanceId": "*"
+            "InstanceId": "__INSTANCE_ID__"
           },
           "statistic": "Average",
           "period": "300",
           "region": "default",
-          "matchExact": false,
+          "matchExact": true,
           "id": "",
           "expression": "",
           "label": "{{InstanceId}}"

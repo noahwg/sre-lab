@@ -1,0 +1,308 @@
+{
+  "uid": "logs",
+  "title": "Logs",
+  "tags": [
+    "logs"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "graphTooltip": 1,
+  "description": "Container logs from VictoriaLogs. Filter by service, level and a regex search; click a log line for its fields.",
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "custom",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "query": "caddy,shortener,postgres,grafana,victoriametrics,victorialogs,node-exporter",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "caddy",
+            "value": "caddy"
+          },
+          {
+            "selected": false,
+            "text": "shortener",
+            "value": "shortener"
+          },
+          {
+            "selected": false,
+            "text": "postgres",
+            "value": "postgres"
+          },
+          {
+            "selected": false,
+            "text": "grafana",
+            "value": "grafana"
+          },
+          {
+            "selected": false,
+            "text": "victoriametrics",
+            "value": "victoriametrics"
+          },
+          {
+            "selected": false,
+            "text": "victorialogs",
+            "value": "victorialogs"
+          },
+          {
+            "selected": false,
+            "text": "node-exporter",
+            "value": "node-exporter"
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "name": "level",
+        "label": "Level",
+        "type": "custom",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "query": "error,warn,info,debug,trace",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "error",
+            "value": "error"
+          },
+          {
+            "selected": false,
+            "text": "warn",
+            "value": "warn"
+          },
+          {
+            "selected": false,
+            "text": "info",
+            "value": "info"
+          },
+          {
+            "selected": false,
+            "text": "debug",
+            "value": "debug"
+          },
+          {
+            "selected": false,
+            "text": "trace",
+            "value": "trace"
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "name": "search",
+        "label": "Search (regex, case-insensitive)",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Log volume by service",
+      "description": "Lines per interval for the current filters.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "victorialogs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 16,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "lineWidth": 0,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "victorialogs"
+          },
+          "refId": "A",
+          "expr": "service:~\"$service\" level:~\"(?i)(${level:pipe})\" _msg:~\"(?i)$search\"",
+          "queryType": "hits",
+          "fields": [
+            "service"
+          ],
+          "fieldsLimit": 10
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Warnings and errors by service",
+      "description": "Ignores the Level filter: always shows WARN and ERROR lines for the selected services.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "victorialogs"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 70,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "lineWidth": 0,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "unit": "short",
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "victorialogs"
+          },
+          "refId": "A",
+          "expr": "service:~\"$service\" level:~\"(?i)(warn|warning|error)\" _msg:~\"(?i)$search\"",
+          "queryType": "hits",
+          "fields": [
+            "service"
+          ],
+          "fieldsLimit": 10
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "Logs",
+      "description": "Newest first, up to 500 lines.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "victorialogs"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 24,
+        "h": 20
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "showCommonLabels": false
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "victorialogs"
+          },
+          "refId": "A",
+          "expr": "service:~\"$service\" level:~\"(?i)(${level:pipe})\" _msg:~\"(?i)$search\"",
+          "queryType": "instant",
+          "maxLines": 500
+        }
+      ]
+    }
+  ]
+}
