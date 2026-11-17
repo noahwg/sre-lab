@@ -43,16 +43,23 @@
     - { path: "{{ monitoring_data_dir }}/victoriatraces" }
     - { path: "{{ monitoring_data_dir }}/fluent-bit" }
     - { path: "{{ monitoring_dir }}/fluent-bit" }
+    - { path: "{{ monitoring_dir }}/victoriametrics" }
     - { path: "{{ monitoring_data_dir }}/grafana", owner: "{{ monitoring_grafana_uid }}" }
 
 - name: Render the scrape config
   ansible.builtin.template:
     src: scrape.yml.j2
-    dest: "{{ monitoring_dir }}/scrape.yml"
+    dest: "{{ monitoring_dir }}/victoriametrics/scrape.yml"
     owner: root
     group: root
     mode: "0644"
   notify: reload scrape config
+
+# The scrape config used to live directly in monitoring_dir (mounted as a single file).
+- name: Remove the old scrape config location
+  ansible.builtin.file:
+    path: "{{ monitoring_dir }}/scrape.yml"
+    state: absent
 
 - name: Render the Fluent Bit config
   ansible.builtin.template:
