@@ -5,7 +5,9 @@ edge_dir: /opt/edge
 edge_data_dir: /var/lib/caddy
 
 edge_caddy_image: caddy:2.10-alpine
-edge_memory_limit: 128m
+# 128m was too small under heavy concurrency (2,500+ parallel TLS connections): Caddy sat at
+# its cap and re-read its own pages from the root disk, which drove iowait to ~70%.
+edge_memory_limit: 256m
 
 # Let's Encrypt. Staging certificates are not trusted by browsers but have very
 # generous rate limits, so start there and flip to false once it works:
