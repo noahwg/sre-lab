@@ -80,7 +80,7 @@
       "id": 2,
       "type": "stat",
       "title": "CPU used",
-      "description": "Whole-host CPU. A t4g.small earns credits at a 20% baseline per vCPU; sustained use above ~20% spends them (see the credit panels below).",
+      "description": "Whole-host CPU, not counting time spent waiting on disk (iowait, shown in CPU by mode), so it matches CloudWatch. A t4g.small earns credits at a 20% baseline per vCPU; sustained use above ~20% spends them (see the credit panels below).",
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -133,7 +133,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "100 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[2m])) * 100",
+          "expr": "100 * (1 - sum(rate(node_cpu_seconds_total{mode=~\"idle|iowait\"}[2m])) / sum(rate(node_cpu_seconds_total[2m])))",
           "legendFormat": "",
           "refId": "A"
         }

@@ -83,7 +83,7 @@ Metrics and dashboards, in Docker from `/opt/monitoring`, with data on the telem
 | `victorialogs` | 128 MB | Stores logs (14 days) |
 | `victoriatraces` | 128 MB | Stores traces (7 days, hard-capped at 2 GiB on disk). Accepts OTLP/HTTP at `victoriatraces:10428/insert/opentelemetry/v1/traces` on the `edge` network, so the app can reach it |
 | `fluent-bit` | 48 MB | Reads every container's Docker log file and ships it to VictoriaLogs |
-| `grafana` | 192 MB | Dashboards, provisioned from files in the repo |
+| `grafana` | 384 MB | Dashboards, provisioned from files in the repo |
 
 - **Scrape targets** (every 15 s, over the shared Docker networks): VictoriaMetrics itself, node-exporter, the app's `/metrics`, and Caddy. Caddy serves its metrics on `http://caddy:9180/metrics`, a listener that is not published, so only containers on the `edge` network can reach it. The public `/metrics` still returns 404. The list is `monitoring_scrape_targets` in the role defaults.
 - **Exposure.** Grafana is public at `https://grafana.<primary domain>` (an `edge_sites` entry in `group_vars/all.yml`; Caddy proxies to `grafana:3000` and gets its own certificate), protected only by Grafana's login (sign-up and anonymous access are off). This is a deliberate lab trade-off; remove that entry to make it private again. VictoriaMetrics is **never** public. Both are also published on the host's loopback, reachable with an SSM port-forward:
