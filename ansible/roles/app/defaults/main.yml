@@ -15,6 +15,12 @@ app_memory_limit: 64m
 app_log_format: json
 app_log_level: info
 
+# Traces: the app sends OTLP/HTTP to VictoriaTraces over the shared `edge` network. Set the
+# endpoint to "" to turn tracing off. The ratio is the fraction of new traces kept (1.0 = all);
+# lower it if traffic grows. VictoriaTraces drops the oldest data past its disk cap either way.
+app_otel_endpoint: http://victoriatraces:10428/insert/opentelemetry
+app_otel_sample_ratio: 1.0
+
 # Docker network created by the edge role.
 app_network: "{{ edge_network | default('edge') }}"
 

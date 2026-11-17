@@ -1,0 +1,291 @@
+{
+  "uid": "traces",
+  "title": "Traces",
+  "tags": [
+    "traces"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "graphTooltip": 1,
+  "description": "Request traces from VictoriaTraces. Click a trace ID to open its span waterfall in Explore. New traces appear after about 30 seconds.",
+  "templating": {
+    "list": [
+      {
+        "name": "operation",
+        "label": "Operation",
+        "description": "Leave empty for all. Names: GET /{code}, POST /api/links, GET /api/links/{code}, DELETE /api/links/{code}",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "name": "tags",
+        "label": "Tags",
+        "description": "logfmt, e.g. http.response.status_code=404 or error=true",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "name": "min_duration",
+        "label": "Min duration",
+        "description": "e.g. 20ms. Leave empty for no minimum",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "",
+            "value": ""
+          }
+        ],
+        "hide": 0
+      },
+      {
+        "name": "slow",
+        "label": "Slow threshold",
+        "description": "Used by the Slow requests table",
+        "type": "textbox",
+        "query": "100ms",
+        "current": {
+          "text": "100ms",
+          "value": "100ms"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "100ms",
+            "value": "100ms"
+          }
+        ],
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Recent traces",
+      "description": "Newest first, up to 50. Filtered by the Operation, Tags and Min duration boxes above. Click a trace ID to open it in Explore.",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "victoriatraces"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "\u00b5s"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Start time",
+            "desc": true
+          }
+        ],
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "jaeger",
+            "uid": "victoriatraces"
+          },
+          "refId": "A",
+          "queryType": "search",
+          "service": "shortener",
+          "limit": 50,
+          "operation": "$operation",
+          "tags": "$tags",
+          "minDuration": "$min_duration"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Failed requests",
+      "description": "Traces with an error: 5xx responses and database failures.",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "victoriatraces"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "\u00b5s"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Start time",
+            "desc": true
+          }
+        ],
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "jaeger",
+            "uid": "victoriatraces"
+          },
+          "refId": "A",
+          "queryType": "search",
+          "service": "shortener",
+          "limit": 50,
+          "tags": "error=true"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Slow requests",
+      "description": "Traces slower than the Slow threshold above.",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "victoriatraces"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 12,
+        "h": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "\u00b5s"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Start time",
+            "desc": true
+          }
+        ],
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "jaeger",
+            "uid": "victoriatraces"
+          },
+          "refId": "A",
+          "queryType": "search",
+          "service": "shortener",
+          "limit": 50,
+          "minDuration": "$slow"
+        }
+      ]
+    }
+  ]
+}
