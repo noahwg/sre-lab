@@ -13,3 +13,8 @@
   ansible.builtin.command: docker restart grafana
   when: not (monitoring_compose.changed | default(false))
   listen: restart grafana
+
+- name: Restart Fluent Bit
+  ansible.builtin.command: docker restart fluent-bit
+  when: not (monitoring_compose.changed | default(false))
+  listen: restart fluent bit

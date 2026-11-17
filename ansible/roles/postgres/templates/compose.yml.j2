@@ -5,6 +5,13 @@ services:
   postgres:
     image: {{ postgres_image }}
     container_name: postgres
+    # Adds the compose service name to each log line (Fluent Bit uses it as the source).
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ docker_log_max_size | default('10m') }}"
+        max-file: "{{ docker_log_max_file | default('3') }}"
+        labels: "com.docker.compose.service"
     restart: unless-stopped
     env_file:
       - {{ postgres_dir }}/postgres.env

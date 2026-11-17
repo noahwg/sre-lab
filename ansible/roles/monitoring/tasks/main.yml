@@ -39,6 +39,9 @@
     - { path: "{{ monitoring_dir }}/dashboards" }
     - { path: "{{ monitoring_data_dir }}" }
     - { path: "{{ monitoring_data_dir }}/victoriametrics" }
+    - { path: "{{ monitoring_data_dir }}/victorialogs" }
+    - { path: "{{ monitoring_data_dir }}/fluent-bit" }
+    - { path: "{{ monitoring_dir }}/fluent-bit" }
     - { path: "{{ monitoring_data_dir }}/grafana", owner: "{{ monitoring_grafana_uid }}" }
 
 - name: Render the scrape config
@@ -49,6 +52,33 @@
     group: root
     mode: "0644"
   notify: reload scrape config
+
+- name: Render the Fluent Bit config
+  ansible.builtin.template:
+    src: "fluent-bit/{{ item }}.j2"
+    dest: "{{ monitoring_dir }}/fluent-bit/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - fluent-bit.conf
+    - parsers.conf
+    - service.lua
+  notify: restart fluent bit
+
+# GF_PLUGINS_PREINSTALL can't be used: it adds to Grafana's default app plugins instead of
+# replacing them. A one-off `grafana cli` run installs just this plugin, into the data
+# directory, and a marker file makes it run once per pinned version.
+- name: Install the VictoriaLogs Grafana plugin
+  ansible.builtin.shell:
+    cmd: >-
+      docker run --rm --user {{ monitoring_grafana_uid }} --entrypoint grafana
+      -v {{ monitoring_data_dir }}/grafana:/var/lib/grafana {{ monitoring_grafana_image }}
+      cli --pluginsDir /var/lib/grafana/plugins plugins install
+      victoriametrics-logs-datasource {{ monitoring_victorialogs_plugin_version }}
+      && touch {{ monitoring_dir }}/.victorialogs-plugin-{{ monitoring_victorialogs_plugin_version }}
+    creates: "{{ monitoring_dir }}/.victorialogs-plugin-{{ monitoring_victorialogs_plugin_version }}"
+  notify: restart grafana
 
 - name: Render the Grafana datasources
   ansible.builtin.template:
@@ -119,6 +149,15 @@
   delay: 5
   changed_when: false
 
+- name: Wait for VictoriaLogs
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_victorialogs_port }}/health"
+  register: monitoring_vl_health
+  until: monitoring_vl_health.status == 200
+  retries: 12
+  delay: 5
+  changed_when: false
+
 - name: Wait for Grafana
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/health"
@@ -142,6 +181,23 @@
   delay: 5
   changed_when: false
 
+# Fluent Bit has had time to ship something: our own containers log constantly (Caddy,
+# the app, Postgres), so recent lines for at least one service must exist.
+- name: Check logs are arriving in VictoriaLogs
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_victorialogs_port }}/select/logsql/query"
+    method: POST
+    body_format: form-urlencoded
+    body:
+      query: "_time:10m | stats by (service) count() as n"
+      limit: "20"
+    return_content: true
+  register: monitoring_logs
+  until: monitoring_logs.content | trim | length > 0
+  retries: 18
+  delay: 5
+  changed_when: false
+
 - name: Check Grafana can reach VictoriaMetrics
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/datasources/uid/victoriametrics/health"
@@ -151,5 +207,17 @@
     return_content: true
   register: monitoring_datasource
   failed_when: monitoring_datasource.json.status | default('') != 'OK'
+  changed_when: false
+  no_log: true
+
+- name: Check Grafana can reach VictoriaLogs
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_grafana_port }}/api/datasources/uid/victorialogs/health"
+    url_username: admin
+    url_password: "{{ monitoring_grafana_password }}"
+    force_basic_auth: true
+    return_content: true
+  register: monitoring_logs_datasource
+  failed_when: monitoring_logs_datasource.json.status | default('') != 'OK'
   changed_when: false
   no_log: true
