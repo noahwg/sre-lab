@@ -11,6 +11,12 @@ datasources:
     jsonData:
       httpMethod: POST
       timeInterval: {{ monitoring_scrape_interval }}
+  - name: VictoriaLogs
+    uid: victorialogs
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: http://victorialogs:9428
+    editable: false
   # Reads CPU credit metrics, which only CloudWatch can see. Credentials come from the
   # instance role through the metadata service (see the compute module's cloudwatch-read policy).
   - name: CloudWatch

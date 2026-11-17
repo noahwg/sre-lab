@@ -14,12 +14,12 @@ ansible/
   roles/
     base/               telemetry volume, swap, system hygiene, Docker
     postgres/           Postgres 17 in Docker, private `db` network, runtime role
-    monitoring/         VictoriaMetrics, node_exporter, Grafana
+    monitoring/         VictoriaMetrics, VictoriaLogs, Fluent Bit, node_exporter, Grafana
     edge/               Caddy: TLS (Let's Encrypt) and reverse proxy
     app/                the shortener container, pulled from ECR
 ```
 
-Still to come in `monitoring`: VictoriaLogs and a log shipper, VictoriaTraces, and a Postgres exporter (VictoriaMetrics, VictoriaLogs, VictoriaTraces, Grafana).
+Still to come in `monitoring`: VictoriaTraces and a Postgres exporter.
 
 ## Usage
 
@@ -80,6 +80,8 @@ Metrics and dashboards, in Docker from `/opt/monitoring`, with data on the telem
 |---|---|---|
 | `victoriametrics` | 160 MB | Stores metrics (30 days) and does the scraping itself, so there is no separate vmagent |
 | `node-exporter` | 32 MB | Host CPU, memory, disk and load, read through a read-only view of `/` |
+| `victorialogs` | 128 MB | Stores logs (14 days) |
+| `fluent-bit` | 48 MB | Reads every container's Docker log file and ships it to VictoriaLogs |
 | `grafana` | 192 MB | Dashboards, provisioned from files in the repo |
 
 - **Scrape targets** (every 15 s, over the shared Docker networks): VictoriaMetrics itself, node-exporter, the app's `/metrics`, and Caddy. Caddy serves its metrics on `http://caddy:9180/metrics`, a listener that is not published, so only containers on the `edge` network can reach it. The public `/metrics` still returns 404. The list is `monitoring_scrape_targets` in the role defaults.
@@ -90,10 +92,13 @@ Metrics and dashboards, in Docker from `/opt/monitoring`, with data on the telem
   make vmui         # http://localhost:8428/vmui   (query and explore raw metrics)
   ```
 
+- **Logs.** Fluent Bit tails `/var/lib/docker/containers/*/*-json.log` (its read offsets are kept on the telemetry volume, so a restart doesn't re-send) and posts JSON lines to VictoriaLogs. Each service's compose file asks Docker's `json-file` driver to record the `com.docker.compose.service` label, which becomes the `service` field. JSON log lines (the app, Caddy) are parsed so their fields are searchable; the log message is `fields.message`, `message` or `msg`, whichever exists. Fluent Bit's own logs are dropped so an error can't feed itself. Browse them on the **Logs** dashboard (filter by service and level, plus a case-insensitive regex search; volume charts and the log stream) or in Grafana Explore with the VictoriaLogs datasource; the Shortener dashboard also has two log panels. Queries are written in LogsQL, for example `service:shortener level:ERROR`. The VictoriaLogs UI is on `127.0.0.1:9428/select/vmui` (SSM port-forward). Docker's own rotation (`docker_log_max_size` x `docker_log_max_file`) still bounds the raw files on the root disk.
+- **Grafana plugin.** The VictoriaLogs datasource is a plugin, installed once per pinned version (`monitoring_victorialogs_plugin_version`) by a one-off `grafana cli` run into the data directory. Grafana's default preinstalled apps stay off (`GF_PLUGINS_PREINSTALL` would add to them, not replace them).
+- **First deploy recreates every container.** The `logging:` options changed on every service in every compose file, so the first run after this change recreates Caddy, the app, Postgres and the monitoring containers (a few seconds of downtime each; Postgres data is on a host path and survives).
 - **CPU.** The Victoria containers are pinned to core 1 (`monitoring_cpuset`) with a low relative weight, so background merging can't starve Caddy and the app. Set `monitoring_cpuset: ""` to turn pinning off.
-- **Dashboards as code.** `roles/monitoring/files/dashboards/*.json` (Host and Shortener) are copied to the host and re-read by Grafana every 30 s, so editing a file and running `make configure ANSIBLE_ARGS="--tags monitoring"` is all it takes. Datasources are provisioned too: VictoriaMetrics (as a Prometheus datasource) and CloudWatch, which supplies the CPU credit panels (credentials come from the instance role).
+- **Dashboards as code.** `roles/monitoring/files/dashboards/*.json` (Host, Shortener and Logs) are copied to the host and re-read by Grafana every 30 s, so editing a file and running `make configure ANSIBLE_ARGS="--tags monitoring"` is all it takes. Datasources are provisioned too: VictoriaMetrics (as a Prometheus datasource) and CloudWatch, which supplies the CPU credit panels (credentials come from the instance role).
 - **Password.** Read from SSM on your machine. Grafana only uses it when it first creates its database; rotate later with `docker exec grafana grafana cli admin reset-admin-password <new>`.
-- **Checks at the end of the run:** the telemetry volume must be mounted (otherwise metrics would silently land on the root disk), VictoriaMetrics and Grafana must answer, **every** scrape target must be up (`sum(up)` equals the number of targets), and Grafana must be able to query VictoriaMetrics.
+- **Checks at the end of the run:** the telemetry volume must be mounted (otherwise metrics would silently land on the root disk), VictoriaMetrics and Grafana must answer, **every** scrape target must be up (`sum(up)` equals the number of targets), logs must be arriving in VictoriaLogs, and Grafana must be able to query both VictoriaMetrics and VictoriaLogs.
 
 ```sh
 make configure ANSIBLE_ARGS="--tags monitoring"

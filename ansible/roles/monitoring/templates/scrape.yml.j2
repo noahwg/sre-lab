@@ -4,6 +4,9 @@ global:
 scrape_configs:
 {% for t in monitoring_scrape_targets %}
   - job_name: {{ t.job }}
+{% if t.path | default('') %}
+    metrics_path: {{ t.path }}
+{% endif %}
     static_configs:
       - targets: ["{{ t.target }}"]
 {% endfor %}

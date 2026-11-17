@@ -5,6 +5,13 @@ services:
   victoriametrics:
     image: {{ monitoring_vm_image }}
     container_name: victoriametrics
+    # Adds the compose service name to each log line (Fluent Bit uses it as the source).
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ docker_log_max_size | default('10m') }}"
+        max-file: "{{ docker_log_max_file | default('3') }}"
+        labels: "com.docker.compose.service"
     restart: unless-stopped
     command:
       - -storageDataPath=/storage
@@ -35,6 +42,13 @@ services:
   node-exporter:
     image: {{ monitoring_node_exporter_image }}
     container_name: node-exporter
+    # Adds the compose service name to each log line (Fluent Bit uses it as the source).
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ docker_log_max_size | default('10m') }}"
+        max-file: "{{ docker_log_max_file | default('3') }}"
+        labels: "com.docker.compose.service"
     restart: unless-stopped
     command:
       - --path.rootfs=/host
@@ -59,6 +73,13 @@ services:
   grafana:
     image: {{ monitoring_grafana_image }}
     container_name: grafana
+    # Adds the compose service name to each log line (Fluent Bit uses it as the source).
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ docker_log_max_size | default('10m') }}"
+        max-file: "{{ docker_log_max_file | default('3') }}"
+        labels: "com.docker.compose.service"
     restart: unless-stopped
     env_file:
       - {{ monitoring_dir }}/grafana.env
@@ -74,6 +95,69 @@ services:
       - {{ monitoring_edge_network }}
     mem_limit: {{ monitoring_grafana_memory_limit }}
     cpu_shares: {{ monitoring_cpu_shares }}
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  victorialogs:
+    image: {{ monitoring_victorialogs_image }}
+    container_name: victorialogs
+    restart: unless-stopped
+    # Adds the compose service name to each log line (Fluent Bit uses it as the source).
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ docker_log_max_size | default('10m') }}"
+        max-file: "{{ docker_log_max_file | default('3') }}"
+        labels: "com.docker.compose.service"
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod={{ monitoring_logs_retention }}
+      - -httpListenAddr=:9428
+      - -memory.allowedPercent=60
+    ports:
+      - "127.0.0.1:{{ monitoring_victorialogs_port }}:9428"
+    volumes:
+      - {{ monitoring_data_dir }}/victorialogs:/storage
+    networks:
+      - {{ monitoring_network }}
+    mem_limit: {{ monitoring_victorialogs_memory_limit }}
+    cpu_shares: {{ monitoring_cpu_shares }}
+{% if monitoring_cpuset %}
+    cpuset: "{{ monitoring_cpuset }}"
+{% endif %}
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  # Reads every container's Docker log file and ships it to VictoriaLogs.
+  fluent-bit:
+    image: {{ monitoring_fluent_bit_image }}
+    container_name: fluent-bit
+    restart: unless-stopped
+    # Adds the compose service name to each log line (Fluent Bit uses it as the source).
+    logging:
+      driver: json-file
+      options:
+        max-size: "{{ docker_log_max_size | default('10m') }}"
+        max-file: "{{ docker_log_max_file | default('3') }}"
+        labels: "com.docker.compose.service"
+    command: ["/fluent-bit/bin/fluent-bit", "-c", "/fluent-bit/etc/fluent-bit.conf"]
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - {{ monitoring_dir }}/fluent-bit:/fluent-bit/etc:ro
+      - {{ monitoring_data_dir }}/fluent-bit:/state
+    networks:
+      - {{ monitoring_network }}
+    mem_limit: {{ monitoring_fluent_bit_memory_limit }}
+    cpu_shares: {{ monitoring_cpu_shares }}
+{% if monitoring_cpuset %}
+    cpuset: "{{ monitoring_cpuset }}"
+{% endif %}
+    read_only: true
     cap_drop:
       - ALL
     security_opt:

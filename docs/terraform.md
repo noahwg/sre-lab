@@ -84,12 +84,14 @@ Builds the host and everything attached to it. This is where nearly all the cost
 | Resource | Details |
 |---|---|
 | `aws_ssm_parameter` (data) | Looks up the latest Amazon Linux 2023 **arm64** AMI, so the instance always starts from a current image |
-| `aws_instance` | `t4g.small` (Graviton), no key pair, no auto-assigned public IP, **IMDSv2 required** (hop limit 2 so containers can reach metadata), encrypted 20 GB gp3 root volume. `ignore_changes = [ami]` stops a newer AMI from replacing the host |
+| `aws_instance` | `t4g.small` (Graviton), no key pair, no auto-assigned public IP, **IMDSv2 required** (hop limit 2 so containers can reach metadata), encrypted 20 GB gp3 root volume. `ignore_changes = [ami, associate_public_ip_address]`: a newer AMI must not replace the host, and neither should the provider reading the public-IP flag back as `true` once the Elastic IP is attached (either would destroy the instance and its data) |
 | `aws_eip` | Stable public address for DNS |
 | `aws_ebs_volume` (telemetry) | Separate encrypted 50 GB gp3 volume in the instance's AZ |
 | `aws_volume_attachment` | Attaches it at `/dev/sdf` with `stop_instance_before_detaching` |
 | `aws_iam_role` + `aws_iam_instance_profile` | EC2 assume-role; has the `AmazonSSMManagedInstanceCore` managed policy attached |
-| `aws_iam_role_policy` | Read/write/delete on the transfer bucket and list on the bucket itself |
+| `aws_iam_role_policy` (`ssm-transfer-bucket`) | Read/write/delete on the transfer bucket and list on the bucket itself |
+| `aws_iam_role_policy` (`ecr-pull`) | Pull-only access to the project's ECR repository |
+| `aws_iam_role_policy` (`cloudwatch-read`) | Read-only CloudWatch metrics (and EC2 describe calls for dropdowns), for Grafana's CloudWatch datasource: CPU credit balance and surplus credits are only visible there. Containers pick it up through the instance metadata service. These actions don't support resource-level restrictions |
 | `aws_s3_bucket` (+ public access block, SSE, lifecycle) | Transfer bucket for Ansible's `community.aws.aws_ssm` connection, which moves files through S3. Private, AES256-encrypted, objects expire after 1 day, `force_destroy` so `make destroy` doesn't fail on leftovers. Name includes the account ID for global uniqueness |
 
 Design notes:
@@ -157,7 +159,7 @@ Input: `parameters`, a map of full parameter path to `{description}`. Outputs: `
 
 ## The secrets stack
 
-`env/labs/secrets/` creates `/<name>/shortener/api_key` (the `x-api-key` for the shortener's management endpoints) and the two Postgres passwords, `/<name>/postgres/owner_password` and `/<name>/postgres/app_password`. Like the registry it is **not** part of `make up` / `make destroy`, so tearing down the host doesn't delete a value you've set. Run `make secrets-up`, then set the real value:
+`env/labs/secrets/` creates `/<name>/shortener/api_key` (the `x-api-key` for the shortener's management endpoints) the two Postgres passwords, `/<name>/postgres/owner_password` and `/<name>/postgres/app_password`, and the Grafana admin password, `/<name>/monitoring/grafana_admin_password`. Like the registry it is **not** part of `make up` / `make destroy`, so tearing down the host doesn't delete a value you've set. Run `make secrets-up`, then set the real value:
 
 ```sh
 aws ssm put-parameter --name /sre-lab/shortener/api_key --type SecureString \
