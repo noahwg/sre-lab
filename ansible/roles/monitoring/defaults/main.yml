@@ -30,7 +30,9 @@ monitoring_cpuset: "1"
 monitoring_cpu_shares: 256
 
 monitoring_vm_memory_limit: 160m
-monitoring_grafana_memory_limit: 192m
+# 192m was too small: Grafana was OOM-killed and restarted in a loop, and the page-cache
+# thrashing around it drove the root disk to ~90% busy.
+monitoring_grafana_memory_limit: 384m
 monitoring_node_exporter_memory_limit: 32m
 monitoring_victorialogs_memory_limit: 128m
 monitoring_fluent_bit_memory_limit: 48m
